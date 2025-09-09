@@ -7,55 +7,114 @@ const logger = require('../utils/logger');
 const authenticateToken = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    let token = null;
 
+    // Extract token from Authorization header
+    if (authHeader) {
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7); // Remove 'Bearer ' prefix
+      } else {
+        token = authHeader; // Direct token without Bearer prefix
+      }
+    }
+
+    // Check if token exists
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Access token is required'
+        message: 'Access token is required',
+        code: 'NO_TOKEN'
+      });
+    }
+
+    // Verify token format - basic check to see if it looks like a JWT
+    const tokenParts = token.split('.');
+    if (tokenParts.length !== 3) {
+      logger.error('Authentication error: Invalid token format', { token: token.substring(0, 20) + '...' });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token format',
+        code: 'INVALID_TOKEN_FORMAT'
       });
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (jwtError) {
+      logger.error('JWT verification error:', {
+        error: jwtError.message,
+        tokenPreview: token.substring(0, 20) + '...'
+      });
+
+      if (jwtError.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token has expired',
+          code: 'TOKEN_EXPIRED'
+        });
+      }
+
+      if (jwtError.name === 'JsonWebTokenError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid token',
+          code: 'INVALID_TOKEN'
+        });
+      }
+
+      return res.status(401).json({
+        success: false,
+        message: 'Token verification failed',
+        code: 'TOKEN_VERIFICATION_FAILED'
+      });
+    }
+
+    // Check if decoded token has adminId
+    if (!decoded.adminId) {
+      logger.error('Authentication error: Token missing adminId', { decoded });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token payload',
+        code: 'INVALID_TOKEN_PAYLOAD'
+      });
+    }
     
     // Get admin from database
     const admin = await Admin.findByPk(decoded.adminId);
     
-    if (!admin || !admin.isActive) {
+    if (!admin) {
+      logger.error('Authentication error: Admin not found', { adminId: decoded.adminId });
       return res.status(401).json({
         success: false,
-        message: 'Invalid token or admin account is inactive'
+        message: 'Admin account not found',
+        code: 'ADMIN_NOT_FOUND'
+      });
+    }
+
+    if (!admin.isActive) {
+      logger.error('Authentication error: Admin account inactive', { adminId: decoded.adminId });
+      return res.status(401).json({
+        success: false,
+        message: 'Admin account is inactive',
+        code: 'ACCOUNT_INACTIVE'
       });
     }
 
     // Add admin to request
     req.admin = admin;
     req.adminId = admin.id;
+    req.token = token;
     
     next();
   } catch (error) {
     logger.error('Authentication error:', error);
     
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token has expired',
-        code: 'TOKEN_EXPIRED'
-      });
-    }
-    
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token',
-        code: 'INVALID_TOKEN'
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: 'Authentication failed'
+      message: 'Authentication failed',
+      code: 'AUTH_ERROR'
     });
   }
 };
@@ -67,7 +126,8 @@ const requirePermission = (permission) => {
       if (!req.admin) {
         return res.status(401).json({
           success: false,
-          message: 'Authentication required'
+          message: 'Authentication required',
+          code: 'AUTH_REQUIRED'
         });
       }
 
@@ -77,10 +137,11 @@ const requirePermission = (permission) => {
       }
 
       // Check if admin has the required permission
-      if (!req.admin.hasPermission(permission)) {
+      if (!req.admin.permissions || !req.admin.permissions.includes(permission)) {
         return res.status(403).json({
           success: false,
-          message: `Access denied. Required permission: ${permission}`
+          message: `Access denied. Required permission: ${permission}`,
+          code: 'INSUFFICIENT_PERMISSIONS'
         });
       }
 
@@ -89,7 +150,8 @@ const requirePermission = (permission) => {
       logger.error('Permission check error:', error);
       return res.status(500).json({
         success: false,
-        message: 'Permission check failed'
+        message: 'Permission check failed',
+        code: 'PERMISSION_CHECK_ERROR'
       });
     }
   };
@@ -101,14 +163,16 @@ const requireSuperAdmin = (req, res, next) => {
     if (!req.admin) {
       return res.status(401).json({
         success: false,
-        message: 'Authentication required'
+        message: 'Authentication required',
+        code: 'AUTH_REQUIRED'
       });
     }
 
     if (req.admin.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
-        message: 'Super admin access required'
+        message: 'Super admin access required',
+        code: 'SUPER_ADMIN_REQUIRED'
       });
     }
 
@@ -117,7 +181,8 @@ const requireSuperAdmin = (req, res, next) => {
     logger.error('Super admin check error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Authorization check failed'
+      message: 'Authorization check failed',
+      code: 'AUTH_CHECK_ERROR'
     });
   }
 };
@@ -126,7 +191,15 @@ const requireSuperAdmin = (req, res, next) => {
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    let token = null;
+
+    if (authHeader) {
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      } else {
+        token = authHeader;
+      }
+    }
 
     if (!token) {
       req.admin = null;
@@ -163,7 +236,8 @@ const authRateLimit = require('express-rate-limit')({
   max: 5, // 5 attempts per window
   message: {
     success: false,
-    message: 'Too many authentication attempts, please try again later'
+    message: 'Too many authentication attempts, please try again later',
+    code: 'RATE_LIMIT_EXCEEDED'
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -172,62 +246,6 @@ const authRateLimit = require('express-rate-limit')({
     return process.env.NODE_ENV === 'test';
   }
 });
-
-// Validate refresh token
-const validateRefreshToken = async (req, res, next) => {
-  try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return res.status(401).json({
-        success: false,
-        message: 'Refresh token is required'
-      });
-    }
-
-    // Verify refresh token
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    
-    // Get admin from database and check if refresh token matches
-    const admin = await Admin.findByPk(decoded.adminId);
-    
-    if (!admin || !admin.isActive || admin.refreshToken !== refreshToken) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid refresh token'
-      });
-    }
-
-    req.admin = admin;
-    req.adminId = admin.id;
-    req.refreshToken = refreshToken;
-    
-    next();
-  } catch (error) {
-    logger.error('Refresh token validation error:', error);
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Refresh token has expired',
-        code: 'REFRESH_TOKEN_EXPIRED'
-      });
-    }
-    
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid refresh token',
-        code: 'INVALID_REFRESH_TOKEN'
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: 'Refresh token validation failed'
-    });
-  }
-};
 
 // Log admin activity
 const logActivity = (action) => {
@@ -251,6 +269,5 @@ module.exports = {
   requireSuperAdmin,
   optionalAuth,
   authRateLimit,
-  validateRefreshToken,
   logActivity
 };
