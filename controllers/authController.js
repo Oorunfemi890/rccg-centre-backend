@@ -1,9 +1,11 @@
-// controllers/authController.js
+// controllers/authController.js - Enhanced with token-based profile management
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const { validationResult } = require("express-validator");
 const { Admin } = require("../models");
 const logger = require("../utils/logger");
+const emailService = require("../services/emailService");
 
 // Helper function to generate tokens
 const generateTokens = (adminId) => {
@@ -16,6 +18,11 @@ const generateTokens = (adminId) => {
   });
 
   return { accessToken, refreshToken };
+};
+
+// Helper function to generate secure token
+const generateSecureToken = () => {
+  return crypto.randomBytes(32).toString('hex');
 };
 
 const authController = {
@@ -217,7 +224,43 @@ const authController = {
     }
   },
 
-  // @desc    Update admin profile
+  // @desc    Request profile update token
+  // @route   POST /api/auth/request-profile-update
+  // @access  Private
+  requestProfileUpdate: async (req, res) => {
+    try {
+      const { type } = req.body; // 'email' or 'profile'
+
+      // Generate secure token
+      const token = generateSecureToken();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+      // Store token in database
+      await req.admin.update({
+        profileUpdateToken: token,
+        profileUpdateTokenExpires: expiresAt,
+        profileUpdateType: type
+      });
+
+      // Send email with token
+      await emailService.sendProfileUpdateEmail(req.admin, token, type);
+
+      logger.info(`Profile update token requested: ${req.admin.email} (${type})`);
+
+      res.json({
+        success: true,
+        message: "Verification token sent to your email. Please check your inbox.",
+      });
+    } catch (error) {
+      logger.error("Request profile update error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to send verification token",
+      });
+    }
+  },
+
+  // @desc    Update admin profile with token verification
   // @route   PUT /api/auth/profile
   // @access  Private
   updateProfile: async (req, res) => {
@@ -232,10 +275,28 @@ const authController = {
         });
       }
 
-      const { name, email, phone, position } = req.body;
+      const { name, email, phone, position, token } = req.body;
 
-      // Check if email is already taken by another admin
+      // If email is being changed, require token verification
       if (email && email.toLowerCase() !== req.admin.email.toLowerCase()) {
+        if (!token) {
+          return res.status(400).json({
+            success: false,
+            message: "Email verification token is required to change email address",
+          });
+        }
+
+        // Verify token
+        if (req.admin.profileUpdateToken !== token || 
+            !req.admin.profileUpdateTokenExpires || 
+            req.admin.profileUpdateTokenExpires < new Date()) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid or expired verification token",
+          });
+        }
+
+        // Check if email is already taken by another admin
         const existingAdmin = await Admin.findOne({
           where: { 
             email: email.toLowerCase(),
@@ -252,12 +313,21 @@ const authController = {
       }
 
       // Update admin profile
-      await req.admin.update({
+      const updateData = {
         name: name || req.admin.name,
-        email: email ? email.toLowerCase() : req.admin.email,
         phone: phone || req.admin.phone,
         position: position || req.admin.position,
-      });
+      };
+
+      // Add email if token was verified
+      if (email && token && req.admin.profileUpdateToken === token) {
+        updateData.email = email.toLowerCase();
+        updateData.profileUpdateToken = null;
+        updateData.profileUpdateTokenExpires = null;
+        updateData.profileUpdateType = null;
+      }
+
+      await req.admin.update(updateData);
 
       logger.info(`Admin profile updated: ${req.admin.email} (${req.admin.id})`);
 
@@ -287,7 +357,58 @@ const authController = {
     }
   },
 
-  // @desc    Change admin password
+  // @desc    Request password change token
+  // @route   POST /api/auth/request-password-change
+  // @access  Private
+  requestPasswordChange: async (req, res) => {
+    try {
+      const { currentPassword } = req.body;
+
+      if (!currentPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "Current password is required",
+        });
+      }
+
+      // Verify current password
+      const isCurrentPasswordValid = await req.admin.comparePassword(currentPassword);
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({
+          success: false,
+          message: "Current password is incorrect",
+        });
+      }
+
+      // Generate secure token
+      const token = generateSecureToken();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+      // Store token in database
+      await req.admin.update({
+        passwordChangeToken: token,
+        passwordChangeTokenExpires: expiresAt
+      });
+
+      // Send email with token
+      await emailService.sendPasswordChangeEmail(req.admin, token);
+
+      logger.info(`Password change token requested: ${req.admin.email}`);
+
+      res.json({
+        success: true,
+        message: "Password change verification token sent to your email.",
+      });
+    } catch (error) {
+      logger.error("Request password change error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to send verification token",
+      });
+    }
+  },
+
+  // @desc    Change admin password with token verification
   // @route   PUT /api/auth/change-password
   // @access  Private
   changePassword: async (req, res) => {
@@ -302,14 +423,15 @@ const authController = {
         });
       }
 
-      const { currentPassword, newPassword } = req.body;
+      const { token, newPassword } = req.body;
 
-      // Verify current password
-      const isCurrentPasswordValid = await req.admin.comparePassword(currentPassword);
-      if (!isCurrentPasswordValid) {
+      // Verify token
+      if (!token || req.admin.passwordChangeToken !== token || 
+          !req.admin.passwordChangeTokenExpires || 
+          req.admin.passwordChangeTokenExpires < new Date()) {
         return res.status(400).json({
           success: false,
-          message: "Current password is incorrect",
+          message: "Invalid or expired verification token",
         });
       }
 
@@ -322,10 +444,12 @@ const authController = {
         });
       }
 
-      // Update password
+      // Update password and clear tokens
       await req.admin.update({ 
         password: newPassword,
-        refreshToken: null // Clear all sessions
+        refreshToken: null, // Clear all sessions
+        passwordChangeToken: null,
+        passwordChangeTokenExpires: null
       });
 
       logger.info(`Password changed: ${req.admin.email} (${req.admin.id})`);
@@ -411,8 +535,8 @@ const authController = {
         passwordResetExpires: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
       });
 
-      // TODO: Send email with reset link
-      // await emailService.sendPasswordResetEmail(admin.email, resetToken);
+      // Send email with reset link
+      await emailService.sendPasswordResetEmail(admin, resetToken);
 
       logger.info(`Password reset requested: ${admin.email} (${admin.id})`);
 
@@ -425,6 +549,87 @@ const authController = {
       res.status(500).json({
         success: false,
         message: "Password reset request failed",
+      });
+    }
+  },
+
+  // @desc    Verify profile update token
+  // @route   POST /api/auth/verify-profile-token
+  // @access  Private
+  verifyProfileToken: async (req, res) => {
+    try {
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({
+          success: false,
+          message: "Verification token is required",
+        });
+      }
+
+      // Check if token is valid and not expired
+      const isValid = req.admin.profileUpdateToken === token && 
+                     req.admin.profileUpdateTokenExpires && 
+                     req.admin.profileUpdateTokenExpires > new Date();
+
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired verification token",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Token verified successfully",
+        data: {
+          type: req.admin.profileUpdateType
+        }
+      });
+    } catch (error) {
+      logger.error("Verify profile token error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Token verification failed",
+      });
+    }
+  },
+
+  // @desc    Verify password change token
+  // @route   POST /api/auth/verify-password-token
+  // @access  Private
+  verifyPasswordToken: async (req, res) => {
+    try {
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({
+          success: false,
+          message: "Verification token is required",
+        });
+      }
+
+      // Check if token is valid and not expired
+      const isValid = req.admin.passwordChangeToken === token && 
+                     req.admin.passwordChangeTokenExpires && 
+                     req.admin.passwordChangeTokenExpires > new Date();
+
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired verification token",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Token verified successfully"
+      });
+    } catch (error) {
+      logger.error("Verify password token error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Token verification failed",
       });
     }
   },
