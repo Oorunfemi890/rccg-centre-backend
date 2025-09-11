@@ -1,4 +1,4 @@
-// routes/auth.js - Enhanced with profile update endpoints
+// routes/auth.js - Enhanced with better validation
 const express = require("express");
 const { body } = require("express-validator");
 const router = express.Router();
@@ -44,26 +44,32 @@ const updateProfileValidation = [
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage("Name must be between 2 and 100 characters"),
+
   body("email")
     .optional()
     .isEmail()
     .normalizeEmail()
     .withMessage("Please provide a valid email address"),
+
   body("phone")
     .optional()
     .trim()
-    .isLength({ min: 10, max: 15 })
-    .withMessage("Please provide a valid phone number"),
+    .isMobilePhone("en-NG") // ✅ Nigerian phone numbers only
+    .withMessage("Please provide a valid Nigerian phone number"),
+
   body("position")
     .optional()
     .trim()
-    .isLength({ max: 100 })
-    .withMessage("Position must be less than 100 characters"),
+    .isString() // ✅ added validator before message
+    .withMessage("Position must be a string"),
+
   body("token")
     .optional()
     .isString()
     .withMessage("Token must be a string"),
 ];
+
+
 
 const requestProfileUpdateValidation = [
   body("type")
@@ -93,7 +99,10 @@ router.post("/logout", authenticateToken, logActivity("logout"), authController.
 // Profile Management Routes
 router.get("/me", authenticateToken, authController.getCurrentAdmin);
 router.post("/request-profile-update", authenticateToken, requestProfileUpdateValidation, logActivity("request_profile_update"), authController.requestProfileUpdate);
+
+// FIXED: Updated profile route with more lenient validation
 router.put("/profile", authenticateToken, updateProfileValidation, logActivity("update_profile"), authController.updateProfile);
+
 router.post("/verify-profile-token", authenticateToken, verifyTokenValidation, authController.verifyProfileToken);
 
 // Password Management Routes

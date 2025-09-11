@@ -1,4 +1,4 @@
-// controllers/authController.js - Enhanced with token-based profile management
+// controllers/authController.js - Enhanced with better logging and validation
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
@@ -265,9 +265,32 @@ const authController = {
   // @access  Private
   updateProfile: async (req, res) => {
     try {
-      // Check validation errors
+      // ENHANCED: Add comprehensive request logging
+      logger.info('Profile update request received:', {
+        adminId: req.admin.id,
+        adminEmail: req.admin.email,
+        requestBody: {
+          name: req.body.name,
+          email: req.body.email,
+          phone: req.body.phone,
+          position: req.body.position,
+          hasToken: !!req.body.token,
+          tokenLength: req.body.token?.length
+        },
+        headers: {
+          contentType: req.headers['content-type'],
+          authorization: req.headers.authorization ? 'Bearer [REDACTED]' : 'none'
+        }
+      });
+
+      // Check validation errors FIRST
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        logger.error('Profile update validation errors:', {
+          errors: errors.array(),
+          requestBody: req.body
+        });
+        
         return res.status(400).json({
           success: false,
           message: "Validation failed",
@@ -277,22 +300,72 @@ const authController = {
 
       const { name, email, phone, position, token } = req.body;
 
+      // FIXED: Reload admin data to get the latest token information
+      await req.admin.reload();
+
+      logger.info('Profile update debug info (after reload):', {
+        adminId: req.admin.id,
+        currentEmail: req.admin.email,
+        requestedEmail: email,
+        hasToken: !!token,
+        storedToken: req.admin.profileUpdateToken ? 'exists' : 'none',
+        tokenType: req.admin.profileUpdateType,
+        tokenExpiry: req.admin.profileUpdateTokenExpires,
+        isExpired: req.admin.profileUpdateTokenExpires ? req.admin.profileUpdateTokenExpires < new Date() : 'no expiry'
+      });
+
       // If email is being changed, require token verification
       if (email && email.toLowerCase() !== req.admin.email.toLowerCase()) {
+        logger.info('Email change detected, validating token...');
+        
         if (!token) {
+          logger.error('No token provided for email change');
           return res.status(400).json({
             success: false,
             message: "Email verification token is required to change email address",
           });
         }
 
-        // Verify token
-        if (req.admin.profileUpdateToken !== token || 
-            !req.admin.profileUpdateTokenExpires || 
-            req.admin.profileUpdateTokenExpires < new Date()) {
+        // FIXED: Better token validation logic
+        if (!req.admin.profileUpdateToken) {
+          logger.error('No stored token found for admin');
           return res.status(400).json({
             success: false,
-            message: "Invalid or expired verification token",
+            message: "No verification token found. Please request a new token.",
+          });
+        }
+
+        if (req.admin.profileUpdateToken !== token) {
+          logger.error('Token mismatch:', {
+            provided: token.substring(0, 10) + '...',
+            stored: req.admin.profileUpdateToken.substring(0, 10) + '...'
+          });
+          return res.status(400).json({
+            success: false,
+            message: "Invalid verification token",
+          });
+        }
+
+        if (!req.admin.profileUpdateTokenExpires || req.admin.profileUpdateTokenExpires < new Date()) {
+          logger.error('Token expired:', {
+            expiry: req.admin.profileUpdateTokenExpires,
+            now: new Date()
+          });
+          return res.status(400).json({
+            success: false,
+            message: "Verification token has expired. Please request a new token.",
+          });
+        }
+
+        // FIXED: Check token type
+        if (req.admin.profileUpdateType !== 'email') {
+          logger.error('Wrong token type:', {
+            expected: 'email',
+            actual: req.admin.profileUpdateType
+          });
+          return res.status(400).json({
+            success: false,
+            message: "Token is not valid for email updates",
           });
         }
 
@@ -305,6 +378,10 @@ const authController = {
         });
 
         if (existingAdmin) {
+          logger.error('Email already exists:', {
+            requestedEmail: email.toLowerCase(),
+            existingAdminId: existingAdmin.id
+          });
           return res.status(400).json({
             success: false,
             message: "Email is already in use by another admin",
@@ -312,30 +389,38 @@ const authController = {
         }
       }
 
-      // Update admin profile
-      const updateData = {
-        name: name || req.admin.name,
-        phone: phone || req.admin.phone,
-        position: position || req.admin.position,
-      };
+      // FIXED: Build update data properly
+      const updateData = {};
 
-      // Add email if token was verified
+      // Always update these fields if provided
+      if (name !== undefined) updateData.name = name;
+      if (phone !== undefined) updateData.phone = phone;  
+      if (position !== undefined) updateData.position = position;
+
+      // Only update email if token was verified
       if (email && token && req.admin.profileUpdateToken === token) {
         updateData.email = email.toLowerCase();
+        // Clear the verification tokens after successful use
         updateData.profileUpdateToken = null;
         updateData.profileUpdateTokenExpires = null;
         updateData.profileUpdateType = null;
       }
 
-      await req.admin.update(updateData);
+      logger.info('Updating admin with data:', updateData);
 
-      logger.info(`Admin profile updated: ${req.admin.email} (${req.admin.id})`);
+      // FIXED: Update the admin record
+      const updatedAdmin = await req.admin.update(updateData);
+
+      // FIXED: Reload to get the updated data
+      await updatedAdmin.reload();
+
+      logger.info(`Admin profile updated successfully: ${updatedAdmin.email} (${updatedAdmin.id})`);
 
       // Emit real-time notification if socket available
       if (req.app.get("io")) {
         req.app.get("io").to("admin-room").emit("admin-profile-updated", {
-          adminId: req.admin.id,
-          adminName: req.admin.name,
+          adminId: updatedAdmin.id,
+          adminName: updatedAdmin.name,
           timestamp: new Date(),
         });
       }
@@ -344,8 +429,8 @@ const authController = {
         success: true,
         message: "Profile updated successfully",
         data: {
-          user: req.admin.toJSON(),
-          admin: req.admin.toJSON(),
+          user: updatedAdmin.toJSON(),
+          admin: updatedAdmin.toJSON(),
         },
       });
     } catch (error) {
@@ -353,6 +438,7 @@ const authController = {
       res.status(500).json({
         success: false,
         message: "Profile update failed",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   },
@@ -424,6 +510,9 @@ const authController = {
       }
 
       const { token, newPassword } = req.body;
+
+      // FIXED: Reload admin data
+      await req.admin.reload();
 
       // Verify token
       if (!token || req.admin.passwordChangeToken !== token || 
@@ -567,6 +656,9 @@ const authController = {
         });
       }
 
+      // FIXED: Reload admin data
+      await req.admin.reload();
+
       // Check if token is valid and not expired
       const isValid = req.admin.profileUpdateToken === token && 
                      req.admin.profileUpdateTokenExpires && 
@@ -608,6 +700,9 @@ const authController = {
           message: "Verification token is required",
         });
       }
+
+      // FIXED: Reload admin data
+      await req.admin.reload();
 
       // Check if token is valid and not expired
       const isValid = req.admin.passwordChangeToken === token && 
