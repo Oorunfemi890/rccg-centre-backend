@@ -1,0 +1,51 @@
+<!-- templates/emails/event-reminder.ejs -->
+<%
+const headerTitle = '📅 Event Reminder';
+const headerBackground = 'linear-gradient(135deg, #7c3aed 0%, #ec4899 100%)';
+const content = `
+    <p>Dear <strong>${member.name}</strong>,</p>
+    
+    <p>This is a friendly reminder about an upcoming event at ${churchName}:</p>
+    
+    <div class="card" style="border: 2px solid #7c3aed;">
+        <h3 style="color: #7c3aed; margin-top: 0; font-size: 22px;">${event.title}</h3>
+        <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px; margin: 15px 0;">
+            <strong>📅 Date:</strong> <span>${eventDate}</span>
+            <strong>🕒 Time:</strong> <span>${formatTime(event.time)}${event.endTime ? ` - ${formatTime(event.endTime)}` : ''}</span>
+            <strong>📍 Location:</strong> <span>${event.location}</span>
+            <strong>📋 Category:</strong> <span>${event.category}</span>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <strong>Description:</strong>
+            <p style="margin: 10px 0; padding: 15px; background: #f8fafc; border-radius: 6px; border-left: 4px solid #7c3aed;">
+                ${event.description}
+            </p>
+        </div>
+        
+        ${event.maxAttendees ? `<p><strong>👥 Max Attendees:</strong> ${event.maxAttendees}</p>` : ''}
+        ${event.registrationRequired ? '<div class="alert alert-warning"><p><strong>⚠️ Registration Required</strong></p></div>' : ''}
+    </div>
+    
+    <div class="text-center" style="margin: 30px 0;">
+        <div style="font-size: 32px; margin: 15px 0;">🙏📅✨</div>
+        <p style="font-size: 18px; color: #7c3aed; font-weight: 600;">
+            We look forward to seeing you there!
+        </p>
+    </div>
+    
+    <div class="alert alert-info">
+        <p><strong>📞 Questions or Need Help?</strong></p>
+        <p>If you have any questions about this event, please contact us:</p>
+        <ul>
+            <li>📧 Email: ${churchEmail}</li>
+            <li>📱 Phone: ${churchPhone}</li>
+        </ul>
+    </div>
+    
+    <p>God bless you!</p>
+    <p><strong>The ${churchName} Team</strong></p>
+`;
+%>
+
+<%- include('partials/email-wrapper', { headerTitle, headerBackground, content, churchName, churchAddress, churchPhone, churchEmail }) %>

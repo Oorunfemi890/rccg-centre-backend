@@ -1,0 +1,12 @@
+<!-- templates/emails/partials/components/footer-signature.ejs -->
+<%
+// Usage: <%- include('partials/components/footer-signature', { team: 'Admin Team', blessing: true }) %>
+%>
+<p style="margin-top: 30px;">
+    <% if (blessing) { %>
+    <strong><%- blessingText || 'God bless you!' %></strong><br>
+    <% } %>
+    <span style="color: <%- color || '#4f46e5' %>;">
+        <%- prefix || 'The' %> <%- churchName %> <%- team || 'Team' %>
+    </span>
+</p>

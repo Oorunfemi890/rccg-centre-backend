@@ -1,0 +1,11 @@
+<!-- templates/emails/partials/components/token-display.ejs -->
+<%
+// Usage: <%- include('partials/components/token-display', { token: 'ABC123', expiry: '15 minutes' }) %>
+%>
+<div class="card-highlight">
+    <p><strong><%- label || 'Your Verification Token:' %></strong></p>
+    <div class="token-display"><%- token %></div>
+    <% if (expiry) { %>
+    <p><small>This token will expire in <strong><%- expiry %></strong></small></p>
+    <% } %>
+</div>

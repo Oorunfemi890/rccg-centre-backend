@@ -1,0 +1,11 @@
+<!-- templates/emails/partials/components/button.ejs -->
+<%
+// Usage: <%- include('partials/components/button', { text: 'Click Me', url: 'https://example.com', type: 'primary' }) %>
+const buttonClass = `btn btn-${type || 'primary'}`;
+const buttonStyle = style || '';
+%>
+<div class="text-center" style="margin: 20px 0;">
+    <a href="<%- url %>" class="<%- buttonClass %>" style="<%- buttonStyle %>">
+        <%- text %>
+    </a>
+</div>

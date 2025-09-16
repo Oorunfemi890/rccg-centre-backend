@@ -1,0 +1,57 @@
+<!-- templates/emails/celebration-approval.ejs -->
+<%
+const headerTitle = 'Celebration Approved! 🎉';
+const headerBackground = 'linear-gradient(135deg, #10b981 0%, #3b82f6 100%)';
+const content = `
+    <p>Dear <strong>${celebration.name}</strong>,</p>
+    
+    <div class="text-center" style="margin: 20px 0;">
+        <div style="font-size: 48px; margin: 20px 0;">🎉✨🎊</div>
+        <h2 style="color: #10b981; margin: 0;">Great News!</h2>
+    </div>
+    
+    <div class="alert alert-success">
+        <p><strong>Your ${celebration.type.toLowerCase()} celebration request has been approved!</strong></p>
+        <p>It will be announced to our church family and celebrated with joy.</p>
+    </div>
+    
+    <div class="card">
+        <h3 style="color: #10b981; margin-top: 0;">🎯 Celebration Details:</h3>
+        <ul>
+            <li><strong>Type:</strong> ${celebration.type}</li>
+            <li><strong>Date:</strong> ${celebration.month}/${celebration.date}</li>
+            ${celebration.message ? `<li><strong>Your Message:</strong><br><em style="color: #6366f1;">"${celebration.message}"</em></li>` : ''}
+            <li><strong>Status:</strong> <span style="color: #10b981; font-weight: bold;">✅ Approved</span></li>
+        </ul>
+    </div>
+    
+    <div class="text-center" style="margin: 30px 0; padding: 20px; background: linear-gradient(135deg, #f0f9ff 0%, #ecfdf5 100%); border-radius: 10px;">
+        <p style="font-size: 18px; color: #059669; margin: 0;">
+            <strong>We're excited to celebrate with you and give thanks to God for this special occasion in your life!</strong>
+        </p>
+    </div>
+    
+    <div class="steps-list">
+        <p><strong>What happens next:</strong></p>
+        <div class="step">
+            <div class="step-number" style="background: #10b981;">1</div>
+            <div class="step-content">Your celebration will be announced during service</div>
+        </div>
+        <div class="step">
+            <div class="step-number" style="background: #3b82f6;">2</div>
+            <div class="step-content">The church community will join in celebrating with you</div>
+        </div>
+        <div class="step">
+            <div class="step-number" style="background: #8b5cf6;">3</div>
+            <div class="step-content">You may receive congratulations from fellow members</div>
+        </div>
+    </div>
+    
+    <p>Thank you for sharing this special moment with our church family. Your joy is our joy!</p>
+    
+    <p><strong>God bless you abundantly!</strong><br>
+    <span style="color: #10b981;">The ${churchName} Team</span></p>
+`;
+%>
+
+<%- include('partials/email-wrapper', { headerTitle, headerBackground, content, churchName, churchAddress, churchPhone, churchEmail }) %>

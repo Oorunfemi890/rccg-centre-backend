@@ -1,0 +1,36 @@
+<!-- templates/emails/partials/components/event-details.ejs -->
+<%
+// Usage: <%- include('partials/components/event-details', { event: eventObject }) %>
+%>
+<div class="card" style="border: 2px solid #7c3aed;">
+    <h3 style="color: #7c3aed; margin-top: 0; font-size: 22px;"><%- event.title %></h3>
+    
+    <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px; margin: 15px 0;">
+        <strong>📅 Date:</strong> <span><%- formatDate(event.date) %></span>
+        <strong>🕒 Time:</strong> <span><%- formatTime(event.time) %><%- event.endTime ? ` - ${formatTime(event.endTime)}` : '' %></span>
+        <strong>📍 Location:</strong> <span><%- event.location %></span>
+        <strong>📋 Category:</strong> <span><%- event.category %></span>
+        <% if (event.organizer) { %>
+        <strong>👤 Organizer:</strong> <span><%- event.organizer %></span>
+        <% } %>
+    </div>
+    
+    <% if (event.description) { %>
+    <div style="margin-top: 20px;">
+        <strong>Description:</strong>
+        <p style="margin: 10px 0; padding: 15px; background: #f8fafc; border-radius: 6px; border-left: 4px solid #7c3aed;">
+            <%- event.description %>
+        </p>
+    </div>
+    <% } %>
+    
+    <% if (event.maxAttendees) { %>
+    <p><strong>👥 Max Attendees:</strong> <%- event.maxAttendees %></p>
+    <% } %>
+    
+    <% if (event.registrationRequired) { %>
+    <div class="alert alert-warning">
+        <p><strong>⚠️ Registration Required</strong></p>
+    </div>
+    <% } %>
+</div>

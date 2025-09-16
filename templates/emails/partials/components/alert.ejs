@@ -1,0 +1,15 @@
+<!-- templates/emails/partials/components/alert.ejs -->
+<%
+// Usage: <%- include('partials/components/alert', { type: 'warning', title: 'Important', content: 'This is important info' }) %>
+const alertClass = `alert alert-${type || 'info'}`;
+%>
+<div class="<%- alertClass %>">
+    <% if (title) { %>
+    <p><strong><%- title %></strong></p>
+    <% } %>
+    <% if (typeof content === 'string') { %>
+    <p><%- content %></p>
+    <% } else { %>
+    <%- content %>
+    <% } %>
+</div>

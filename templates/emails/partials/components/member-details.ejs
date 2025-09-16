@@ -1,0 +1,28 @@
+<!-- templates/emails/partials/components/member-details.ejs -->
+<%
+// Usage: <%- include('partials/components/member-details', { member: memberObject }) %>
+%>
+<div class="card">
+    <h3 style="color: #4f46e5; margin-top: 0;">🎯 Member Details:</h3>
+    <ul>
+        <li><strong>Name:</strong> <%- member.name %></li>
+        <% if (member.email) { %>
+        <li><strong>Email:</strong> <%- member.email %></li>
+        <% } %>
+        <% if (member.phone) { %>
+        <li><strong>Phone:</strong> <%- member.phone %></li>
+        <% } %>
+        <% if (member.department) { %>
+        <li><strong>Department:</strong> <%- member.department %></li>
+        <% } %>
+        <% if (member.position) { %>
+        <li><strong>Position:</strong> <%- member.position %></li>
+        <% } %>
+        <% if (member.membershipDate) { %>
+        <li><strong>Membership Date:</strong> <%- formatDate(member.membershipDate) %></li>
+        <% } %>
+        <% if (member.address) { %>
+        <li><strong>Address:</strong> <%- member.address %></li>
+        <% } %>
+    </ul>
+</div>

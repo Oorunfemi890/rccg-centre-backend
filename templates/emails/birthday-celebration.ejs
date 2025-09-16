@@ -1,0 +1,65 @@
+<!-- templates/emails/birthday-celebration.ejs -->
+<%
+// Template data setup
+const headerTitle = `🎂 Happy Birthday! 🎂`;
+const headerSubtitle = celebration.name;
+const headerBackground = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+const content = `
+    <div class="text-center">
+        <h2 style="color: #667eea; font-size: 28px; margin-bottom: 10px;">
+            🎉 ${celebration.name} 🎉
+        </h2>
+        <p style="font-size: 18px; color: #666; margin-bottom: 30px;">
+            Today is your special day!
+        </p>
+    </div>
+    
+    <div class="card" style="background: linear-gradient(135deg, #f0f9ff 0%, #fef3c7 100%); border: 2px solid #fbbf24;">
+        <p><strong style="color: #92400e;">🎉 Today is a special day! 🎉</strong></p>
+        <p>The entire ${churchName} family joins together to celebrate you on your special day!</p>
+        
+        ${celebration.message ? `<p style="font-style: italic; color: #7c3aed; font-size: 16px; margin: 20px 0; padding: 15px; background: rgba(124, 58, 237, 0.1); border-radius: 6px;">"${celebration.message}"</p>` : ''}
+        
+        <p>We thank God for your life, your contributions to our church community, and for the blessing you are to all of us.</p>
+        
+        <p>May this new year of your life be filled with God's abundant blessings, joy, peace, and everything your heart desires according to His will.</p>
+    </div>
+    
+    <p><strong>We pray that:</strong></p>
+    <ul style="line-height: 1.8;">
+        <li>🙏 <strong>God grants you many more years of good health and happiness</strong></li>
+        <li>✨ <strong>Your dreams and aspirations come to pass</strong></li>
+        <li>💝 <strong>You continue to be a blessing to others</strong></li>
+        <li>🌟 <strong>This new age brings you closer to your divine purpose</strong></li>
+    </ul>
+    
+    <div class="text-center" style="margin: 30px 0;">
+        <div style="font-size: 48px; margin: 20px 0;">🎂🎈🎊</div>
+        <p style="font-size: 20px; color: #667eea; font-weight: bold;">
+            Celebrate well and know that you are loved and appreciated!
+        </p>
+    </div>
+    
+    <div class="text-center">
+        <p style="font-size: 24px; color: #f59e0b; font-weight: bold; margin: 20px 0;">
+            🎉 Happy Birthday once again! 🎉
+        </p>
+    </div>
+    
+    <p style="text-align: center; margin-top: 30px;">
+        <strong style="color: #7c3aed;">With love and prayers,<br>
+        The ${churchName} Family</strong>
+    </p>
+`;
+%>
+
+<%- include('partials/email-wrapper', { 
+    headerTitle,
+    headerSubtitle,
+    headerBackground,
+    content,
+    churchName,
+    churchAddress,
+    churchPhone,
+    churchEmail
+}) %>

@@ -1,0 +1,94 @@
+<!-- templates/emails/member-welcome.ejs -->
+<%
+// Template data setup
+const headerTitle = `Welcome to ${churchName}!`;
+const headerBackground = 'linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)';
+const content = `
+    <div class="text-center">
+        <h2 style="color: #4f46e5; margin-bottom: 30px;">Welcome to Our Church Family! 🏠</h2>
+    </div>
+    
+    <p>Dear <strong>${member.name}</strong>,</p>
+    
+    <p>We are <strong>thrilled</strong> to welcome you to our church family! Your membership means a lot to us, and we're excited to have you join our community of faith.</p>
+    
+    <div class="card">
+        <h3 style="color: #4f46e5; margin-top: 0;">🎯 Your Membership Details:</h3>
+        <ul>
+            <li><strong>Name:</strong> ${member.name}</li>
+            <li><strong>Membership Date:</strong> ${membershipDate}</li>
+            <li><strong>Department:</strong> ${member.department || 'To be assigned'}</li>
+            ${member.phone ? `<li><strong>Phone:</strong> ${member.phone}</li>` : ''}
+            ${member.address ? `<li><strong>Address:</strong> ${member.address}</li>` : ''}
+        </ul>
+    </div>
+    
+    <h3 style="color: #06b6d4;">🌟 What's Next?</h3>
+    <p>We encourage you to take the following steps to fully integrate into our church community:</p>
+    
+    <div class="steps-list">
+        <div class="step">
+            <div class="step-number" style="background: #4f46e5;">1</div>
+            <div class="step-content">
+                <strong>Attend our weekly services</strong>
+                <br><small>Join us every Sunday for worship and fellowship</small>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-number" style="background: #06b6d4;">2</div>
+            <div class="step-content">
+                <strong>Join a connect group</strong>
+                <br><small>Build meaningful relationships with other members</small>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-number" style="background: #10b981;">3</div>
+            <div class="step-content">
+                <strong>Get involved in ministry opportunities</strong>
+                <br><small>Discover your spiritual gifts and serve others</small>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-number" style="background: #f59e0b;">4</div>
+            <div class="step-content">
+                <strong>Connect with other members</strong>
+                <br><small>Build lasting friendships within our community</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="alert alert-info">
+        <p><strong>📞 Need Help Getting Started?</strong></p>
+        <p>If you have any questions or need assistance with anything, please don't hesitate to contact us:</p>
+        <ul>
+            <li>📧 Email: ${churchEmail}</li>
+            <li>📱 Phone: ${churchPhone}</li>
+            <li>🏠 Visit us at: ${churchAddress}</li>
+        </ul>
+    </div>
+    
+    <div class="text-center" style="margin: 30px 0;">
+        <div style="font-size: 32px; margin: 15px 0;">🙏✨🏠</div>
+        <p style="font-size: 18px; color: #4f46e5; font-weight: 600;">
+            We're here to support you on your spiritual journey!
+        </p>
+    </div>
+    
+    <p>Once again, welcome to the ${churchName} family. We believe that God has great plans for your life, and we're honored to be part of your spiritual journey.</p>
+    
+    <p style="margin-top: 30px;">
+        <strong>God bless you abundantly!</strong><br>
+        <span style="color: #4f46e5;">The ${churchName} Team</span>
+    </p>
+`;
+%>
+
+<%- include('partials/email-wrapper', { 
+    headerTitle,
+    headerBackground,
+    content,
+    churchName,
+    churchAddress,
+    churchPhone,
+    churchEmail
+}) %>

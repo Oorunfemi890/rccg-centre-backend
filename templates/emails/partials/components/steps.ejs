@@ -1,0 +1,15 @@
+<!-- templates/emails/partials/components/steps.ejs -->
+<%
+// Usage: <%- include('partials/components/steps', { title: 'How to do this:', steps: [{number: 1, content: 'First step'}, {number: 2, content: 'Second step'}] }) %>
+%>
+<div class="steps-list">
+    <% if (title) { %>
+    <p><strong><%- title %></strong></p>
+    <% } %>
+    <% steps.forEach(step => { %>
+    <div class="step">
+        <div class="step-number"><%- step.number %></div>
+        <div class="step-content"><%- step.content %></div>
+    </div>
+    <% }); %>
+</div>

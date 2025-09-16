@@ -1,0 +1,340 @@
+<!-- templates/emails/partials/email-wrapper.ejs -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="x-apple-disable-message-reformatting">
+    <title><%- title || churchName %></title>
+    <style>
+        /* Reset styles */
+        body, table, td, p, a, li, blockquote {
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+        table, td {
+            mso-table-lspace: 0pt;
+            mso-table-rspace: 0pt;
+        }
+        img {
+            -ms-interpolation-mode: bicubic;
+            border: 0;
+            height: auto;
+            line-height: 100%;
+            outline: none;
+            text-decoration: none;
+        }
+
+        /* Base styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .email-container {
+            max-width: 600px;
+            margin: 20px auto;
+            background: #ffffff;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Header styles */
+        .email-header {
+            background: <%- headerBackground || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' %>;
+            color: #ffffff;
+            padding: 30px 20px;
+            text-align: center;
+        }
+
+        .email-header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .email-header .icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        /* Content styles */
+        .email-content {
+            padding: 30px 20px;
+            background: #ffffff;
+        }
+
+        .email-content h2 {
+            color: #2d3748;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+
+        .email-content h3 {
+            color: #4a5568;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .email-content p {
+            margin-bottom: 16px;
+            line-height: 1.6;
+        }
+
+        .email-content ul, .email-content ol {
+            margin: 16px 0;
+            padding-left: 20px;
+        }
+
+        .email-content li {
+            margin-bottom: 8px;
+        }
+
+        /* Utility classes */
+        .text-center { text-align: center; }
+        .text-bold { font-weight: bold; }
+        .text-italic { font-style: italic; }
+
+        /* Button styles */
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            margin: 10px 0;
+        }
+
+        .btn-primary {
+            background-color: #4299e1;
+            color: #ffffff;
+        }
+
+        .btn-success {
+            background-color: #48bb78;
+            color: #ffffff;
+        }
+
+        .btn-warning {
+            background-color: #ed8936;
+            color: #ffffff;
+        }
+
+        .btn-danger {
+            background-color: #f56565;
+            color: #ffffff;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Card styles */
+        .card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .card-highlight {
+            background: #edf2f7;
+            border: 2px dashed #cbd5e0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        /* Alert styles */
+        .alert {
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .alert-info {
+            background: #bee3f8;
+            border: 1px solid #3182ce;
+            color: #2a69ac;
+        }
+
+        .alert-success {
+            background: #c6f6d5;
+            border: 1px solid #38a169;
+            color: #276749;
+        }
+
+        .alert-warning {
+            background: #faf089;
+            border: 1px solid #d69e2e;
+            color: #b7791f;
+        }
+
+        .alert-danger {
+            background: #fed7d7;
+            border: 1px solid #e53e3e;
+            color: #742a2a;
+        }
+
+        /* Token display */
+        .token-display {
+            font-family: 'Courier New', monospace;
+            font-size: 24px;
+            font-weight: bold;
+            color: #2d3748;
+            letter-spacing: 2px;
+            padding: 15px;
+            background: #ffffff;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            display: inline-block;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+
+        /* Steps list */
+        .steps-list {
+            background: #edf2f7;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin: 15px 0;
+        }
+
+        .step-number {
+            background: #4299e1;
+            color: #ffffff;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+            padding-top: 2px;
+        }
+
+        /* Footer styles */
+        .email-footer {
+            padding: 30px 20px;
+            text-align: center;
+            color: #666666;
+            background: #f7fafc;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .email-footer p {
+            margin: 8px 0;
+        }
+
+        .email-footer .church-name {
+            font-weight: bold;
+            color: #4a5568;
+            font-size: 16px;
+        }
+
+        .email-footer .disclaimer {
+            font-size: 12px;
+            color: #a0aec0;
+            margin-top: 15px;
+        }
+
+        /* Responsive styles */
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                margin: 10px;
+                border-radius: 5px;
+            }
+            
+            .email-header,
+            .email-content,
+            .email-footer {
+                padding: 20px 15px;
+            }
+            
+            .email-header h1 {
+                font-size: 20px;
+            }
+            
+            .token-display {
+                font-size: 18px;
+                letter-spacing: 1px;
+                padding: 10px;
+            }
+            
+            .btn {
+                display: block;
+                margin: 10px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="email-header">
+            <% if (headerIcon) { %>
+            <span class="icon"><%- headerIcon %></span>
+            <% } %>
+            <h1><%- headerTitle %></h1>
+            <% if (headerSubtitle) { %>
+            <p style="margin: 10px 0 0 0; opacity: 0.9;"><%- headerSubtitle %></p>
+            <% } %>
+        </div>
+
+        <!-- Main Content -->
+        <div class="email-content">
+            <%- content %>
+        </div>
+
+        <!-- Footer -->
+        <div class="email-footer">
+            <p class="church-name"><%- churchName %></p>
+            <% if (churchAddress) { %>
+            <p><%- churchAddress %></p>
+            <% } %>
+            <% if (churchPhone || churchEmail) { %>
+            <p>
+                <% if (churchPhone) { %>Phone: <%- churchPhone %><% } %>
+                <% if (churchPhone && churchEmail) { %> | <% } %>
+                <% if (churchEmail) { %>Email: <%- churchEmail %><% } %>
+            </p>
+            <% } %>
+            
+            <% if (!hideDisclaimer) { %>
+            <p class="disclaimer">
+                This is an automated message. Please do not reply to this email.
+            </p>
+            <% } %>
+        </div>
+    </div>
+</body>
+</html>

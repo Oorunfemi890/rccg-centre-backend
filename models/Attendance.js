@@ -1,4 +1,4 @@
-//  models/Attendance.js
+// models/Attendance.js - Updated with proper associations
 module.exports = (sequelize, DataTypes) => {
   const Attendance = sequelize.define('Attendance', {
     id: {
@@ -98,6 +98,25 @@ module.exports = (sequelize, DataTypes) => {
     ]
   });
 
+  // Define associations
+  Attendance.associate = function(models) {
+    // Attendance belongs to Admin (who recorded it)
+    Attendance.belongsTo(models.Admin, {
+      foreignKey: 'recordedById',
+      as: 'recordedBy',
+      onDelete: 'RESTRICT',
+      onUpdate: 'CASCADE'
+    });
+
+    // Attendance has many MemberAttendances
+    Attendance.hasMany(models.MemberAttendance, {
+      foreignKey: 'attendanceId',
+      as: 'memberAttendances',
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE'
+    });
+  };
+
   // Class Methods
   Attendance.getStatistics = function(period = 'month') {
     const { Op } = require('sequelize');
@@ -106,16 +125,16 @@ module.exports = (sequelize, DataTypes) => {
 
     switch (period) {
       case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
         break;
       case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
         break;
       case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
         break;
       default:
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
     }
 
     return this.findAll({
@@ -133,6 +152,20 @@ module.exports = (sequelize, DataTypes) => {
       ],
       raw: true
     });
+  };
+
+  // Instance methods
+  Attendance.prototype.toJSON = function() {
+    const values = { ...this.get() };
+    
+    // Ensure numbers are properly formatted
+    values.totalAttendance = parseInt(values.totalAttendance) || 0;
+    values.adults = parseInt(values.adults) || 0;
+    values.youth = parseInt(values.youth) || 0;
+    values.children = parseInt(values.children) || 0;
+    values.visitors = parseInt(values.visitors) || 0;
+    
+    return values;
   };
 
   return Attendance;

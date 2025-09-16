@@ -1,0 +1,14 @@
+<!-- templates/emails/partials/components/card.ejs -->
+<%
+// Usage: <%- include('partials/components/card', { title: 'Card Title', content: 'Card content here' }) %>
+%>
+<div class="card">
+    <% if (title) { %>
+    <h3 style="margin-top: 0; color: #4a5568;"><%- title %></h3>
+    <% } %>
+    <% if (typeof content === 'string') { %>
+    <p><%- content %></p>
+    <% } else { %>
+    <%- content %>
+    <% } %>
+</div>

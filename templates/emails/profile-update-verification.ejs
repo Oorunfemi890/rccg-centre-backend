@@ -1,0 +1,58 @@
+<!-- templates/emails/profile-update-verification.ejs -->
+<%
+// Template data setup
+const headerTitle = '🔐 Profile Update Verification';
+const headerBackground = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+const content = `
+    <p>Hello <strong>${admin.name}</strong>,</p>
+    
+    <p>You have requested to ${isEmailChange ? 'change your email address' : 'update your profile information'} on your ${churchName} admin account. For security purposes, please verify this action using the token below:</p>
+    
+    <div class="card-highlight">
+        <p><strong>Your Verification Token:</strong></p>
+        <div class="token-display">${token}</div>
+        <p><small>This token will expire in <strong>${expiryMinutes} minutes</strong></small></p>
+    </div>
+    
+    <div class="steps-list">
+        <p><strong>How to use this token:</strong></p>
+        <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">Return to the admin dashboard where you initiated the ${isEmailChange ? 'email change' : 'profile update'}</div>
+        </div>
+        <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">Enter the verification token above in the verification modal</div>
+        </div>
+        <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">Complete your ${isEmailChange ? 'email change' : 'profile update'}</div>
+        </div>
+    </div>
+    
+    <div class="alert alert-warning">
+        <p><strong>⚠️ Security Notice:</strong></p>
+        <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>This token is valid for ${expiryMinutes} minutes only</li>
+            <li>Do not share this token with anyone</li>
+            <li>If you did not request this change, please contact support immediately</li>
+            <li>This email was sent from a secure system</li>
+        </ul>
+    </div>
+    
+    <p>If you did not request this ${isEmailChange ? 'email change' : 'profile update'}, please ignore this email or contact our support team immediately.</p>
+    
+    <p>Best regards,<br>
+    <strong>The ${churchName} Admin Team</strong></p>
+`;
+%>
+
+<%- include('partials/email-wrapper', { 
+    headerTitle,
+    headerBackground,
+    content,
+    churchName,
+    churchAddress,
+    churchPhone,
+    churchEmail
+}) %>
