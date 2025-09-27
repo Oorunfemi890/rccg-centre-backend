@@ -4,7 +4,7 @@ const { body, param, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
-const celebrationController = require('../controllers/celebrationsController');
+const publicController = require('../controllers/publicController');
 const { uploadMiddleware } = require('../middleware/upload');
 const logger = require('../utils/logger');
 
@@ -113,11 +113,51 @@ const celebrationSubmissionValidation = [
     .withMessage('Year must be between 1900 and 2100')
 ];
 
+// Validation for contact form
+const contactInquiryValidation = [
+  body('name')
+    .trim()
+    .notEmpty()
+    .withMessage('Name is required')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Name must be between 2 and 100 characters'),
+  body('email')
+    .trim()
+    .isEmail()
+    .withMessage('Valid email is required')
+    .normalizeEmail(),
+  body('phone')
+    .trim()
+    .notEmpty()
+    .withMessage('Phone number is required'),
+  body('subject')
+    .trim()
+    .notEmpty()
+    .withMessage('Subject is required')
+    .isLength({ max: 200 })
+    .withMessage('Subject must be less than 200 characters'),
+  body('message')
+    .trim()
+    .notEmpty()
+    .withMessage('Message is required')
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Message must be between 10 and 1000 characters')
+];
+
+// Validation for celebration status check
+const celebrationStatusValidation = [
+  param('phone')
+    .notEmpty()
+    .withMessage('Phone number is required')
+    .isLength({ min: 10, max: 20 })
+    .withMessage('Invalid phone number format')
+];
+
 // Validation error handler
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    logger.warn('Celebration form validation failed', {
+    logger.warn('Public form validation failed', {
       ip: req.ip,
       errors: errors.array(),
       body: { ...req.body, pictures: req.files ? `${req.files.length} files` : 'none' }
@@ -195,53 +235,22 @@ const logPublicRequest = (req, res, next) => {
   next();
 };
 
-// PUBLIC ENDPOINTS
+// PUBLIC ROUTES
 
 // @route   GET /api/public/health
 // @desc    Health check for public endpoints
 // @access  Public
-router.get('/health', setSecurityHeaders, (req, res) => {
-  res.json({
-    success: true,
-    message: 'Public API is healthy',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      celebrations: '/api/public/celebrations',
-      celebrationTypes: '/api/public/celebration-types'
-    }
-  });
-});
+router.get('/health', setSecurityHeaders, publicController.healthCheck);
 
 // @route   GET /api/public/celebration-types
 // @desc    Get available celebration types for form dropdown
 // @access  Public
-router.get('/celebration-types', setSecurityHeaders, publicRateLimit, (req, res) => {
-  try {
-    const celebrationTypes = [
-      { value: 'Birthday', label: 'Birthday 🎂', emoji: '🎂' },
-      { value: 'Wedding Anniversary', label: 'Wedding Anniversary 💍', emoji: '💍' },
-      { value: 'Baby Dedication', label: 'Baby Dedication 👶', emoji: '👶' },
-      { value: 'Graduation', label: 'Graduation 🎓', emoji: '🎓' },
-      { value: 'Promotion', label: 'Career Promotion 💼', emoji: '💼' },
-      { value: 'New Job', label: 'New Job 🎯', emoji: '🎯' },
-      { value: 'New Baby', label: 'New Baby 🍼', emoji: '🍼' },
-      { value: 'House Dedication', label: 'House Dedication 🏠', emoji: '🏠' },
-      { value: 'Other', label: 'Other Celebration 🎉', emoji: '🎉' }
-    ];
-
-    res.json({
-      success: true,
-      data: celebrationTypes,
-      message: 'Celebration types retrieved successfully'
-    });
-  } catch (error) {
-    logger.error('Get celebration types error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve celebration types'
-    });
-  }
-});
+router.get(
+  '/celebration-types',
+  setSecurityHeaders,
+  publicRateLimit,
+  publicController.getCelebrationTypes
+);
 
 // @route   POST /api/public/celebrations
 // @desc    Submit celebration request from church main site
@@ -255,29 +264,7 @@ router.post(
   validateFiles,
   celebrationSubmissionValidation,
   handleValidationErrors,
-  async (req, res) => {
-    try {
-      // Add additional logging for public submissions
-      logger.info('Public celebration submission received', {
-        type: req.body.type,
-        name: req.body.name,
-        phone: req.body.phone,
-        email: req.body.email,
-        ip: req.ip,
-        userAgent: req.get('User-Agent'),
-        filesCount: req.files ? req.files.length : 0
-      });
-
-      // Call the controller method
-      await celebrationController.submitCelebration(req, res);
-    } catch (error) {
-      logger.error('Public celebration submission error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'We encountered an error processing your celebration request. Please try again or contact us directly.'
-      });
-    }
-  }
+  publicController.submitCelebration
 );
 
 // @route   GET /api/public/celebration-status/:phone
@@ -287,77 +274,10 @@ router.get(
   '/celebration-status/:phone',
   setSecurityHeaders,
   publicRateLimit,
-  [
-    param('phone')
-      .notEmpty()
-      .withMessage('Phone number is required')
-      .isLength({ min: 10, max: 20 })
-      .withMessage('Invalid phone number format')
-  ],
+  celebrationStatusValidation,
   handleValidationErrors,
-  async (req, res) => {
-    try {
-      const { phone } = req.params;
-      
-      const celebrations = await Celebration.findAll({
-        where: {
-          phone: phone,
-          createdAt: {
-            [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // Last 30 days
-          }
-        },
-        attributes: ['id', 'type', 'name', 'status', 'createdAt', 'acknowledgedDate'],
-        order: [['createdAt', 'DESC']],
-        limit: 5
-      });
-
-      if (celebrations.length === 0) {
-        return res.json({
-          success: true,
-          message: 'No recent celebration requests found for this phone number',
-          data: []
-        });
-      }
-
-      const statusData = celebrations.map(celebration => ({
-        id: celebration.id,
-        type: celebration.type,
-        name: celebration.name,
-        status: celebration.status,
-        submittedAt: celebration.createdAt,
-        acknowledgedAt: celebration.acknowledgedDate,
-        statusMessage: getStatusMessage(celebration.status)
-      }));
-
-      res.json({
-        success: true,
-        message: 'Celebration status retrieved successfully',
-        data: statusData
-      });
-
-    } catch (error) {
-      logger.error('Get celebration status error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to check celebration status'
-      });
-    }
-  }
+  publicController.getCelebrationStatus
 );
-
-// Helper function to get status message
-const getStatusMessage = (status) => {
-  switch (status) {
-    case 'pending':
-      return 'Your celebration request is being reviewed. We will contact you soon!';
-    case 'approved':
-      return 'Great news! Your celebration has been approved. We will acknowledge it during service.';
-    case 'rejected':
-      return 'We were unable to approve this celebration request. Please contact us for more information.';
-    default:
-      return 'Status unknown. Please contact us for more information.';
-  }
-};
 
 // @route   POST /api/public/contact-celebration
 // @desc    Contact form for celebration inquiries
@@ -366,82 +286,12 @@ router.post(
   '/contact-celebration',
   setSecurityHeaders,
   publicRateLimit,
-  [
-    body('name')
-      .trim()
-      .notEmpty()
-      .withMessage('Name is required')
-      .isLength({ min: 2, max: 100 })
-      .withMessage('Name must be between 2 and 100 characters'),
-    body('email')
-      .trim()
-      .isEmail()
-      .withMessage('Valid email is required')
-      .normalizeEmail(),
-    body('phone')
-      .trim()
-      .notEmpty()
-      .withMessage('Phone number is required'),
-    body('subject')
-      .trim()
-      .notEmpty()
-      .withMessage('Subject is required')
-      .isLength({ max: 200 })
-      .withMessage('Subject must be less than 200 characters'),
-    body('message')
-      .trim()
-      .notEmpty()
-      .withMessage('Message is required')
-      .isLength({ min: 10, max: 1000 })
-      .withMessage('Message must be between 10 and 1000 characters')
-  ],
+  contactInquiryValidation,
   handleValidationErrors,
-  async (req, res) => {
-    try {
-      const { name, email, phone, subject, message } = req.body;
-
-      logger.info('Celebration contact form submission', {
-        name,
-        email,
-        phone,
-        subject,
-        ip: req.ip
-      });
-
-      // Here you would typically send an email to admins
-      // await emailService.sendCelebrationInquiry({ name, email, phone, subject, message });
-
-      res.json({
-        success: true,
-        message: 'Thank you for your inquiry! We will get back to you within 24 hours.'
-      });
-
-    } catch (error) {
-      logger.error('Contact celebration form error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to send your inquiry. Please try again or contact us directly.'
-      });
-    }
-  }
+  publicController.submitContactInquiry
 );
 
 // Error handling for public routes
-router.use((error, req, res, next) => {
-  logger.error('Public route error:', {
-    error: error.message,
-    stack: error.stack,
-    url: req.originalUrl,
-    method: req.method,
-    ip: req.ip
-  });
-
-  // Don't expose internal errors to public
-  res.status(500).json({
-    success: false,
-    message: 'An unexpected error occurred. Please try again or contact support.',
-    timestamp: new Date().toISOString()
-  });
-});
+router.use(publicController.handleError);
 
 module.exports = router;
