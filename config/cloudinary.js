@@ -1,4 +1,4 @@
-// config/cloudinary.js
+// config/cloudinary.js 
 const cloudinary = require('cloudinary').v2;
 
 // Configure Cloudinary
@@ -30,8 +30,9 @@ const getOptimizedImageUrl = (publicId, options = {}) => {
   return cloudinary.url(publicId, defaultOptions);
 };
 
-module.exports = {
-  cloudinary,
-  deleteImage,
-  getOptimizedImageUrl
-};
+// Export the main cloudinary instance as default
+module.exports = cloudinary;
+
+// Also export helper functions
+module.exports.deleteImage = deleteImage;
+module.exports.getOptimizedImageUrl = getOptimizedImageUrl;
