@@ -19,11 +19,11 @@ const seedData = async () => {
     if (!existingAdmin) {
       // Create super admin
       const superAdmin = await Admin.create({
-        name: 'Pastor John Doe',
-        email: 'admin@rccglcc.org',
-        password: 'admin123',
+        name: 'Pastor olorunfemi Ayomide',
+        email: 'olorunfemiayomide045@gmail.com',
+        password: 'Ayrichie890?',
         role: 'super_admin',
-        phone: '+234 803 331 7762',
+        phone: '+234 903 539 3810',
         position: 'Senior Pastor',
         permissions: ['all'],
         isActive: true
