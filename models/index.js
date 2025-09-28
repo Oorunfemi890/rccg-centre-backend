@@ -27,7 +27,7 @@ const sequelize = new Sequelize({
 
 // Import Models
 const Admin = require('./Admin')(sequelize, Sequelize.DataTypes);
-const Member = require('./Member')(sequelize, Sequelize.DataTypes);
+const Member = require('./member')(sequelize, Sequelize.DataTypes);
 const Attendance = require('./Attendance')(sequelize, Sequelize.DataTypes);
 const Event = require('./Event')(sequelize, Sequelize.DataTypes);
 const Celebration = require('./Celebration')(sequelize, Sequelize.DataTypes);
