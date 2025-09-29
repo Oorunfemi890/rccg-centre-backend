@@ -1,11 +1,22 @@
-// middleware/auth.js
+// middleware/auth.js - FIXED: No direct Admin import
 const jwt = require('jsonwebtoken');
-const { Admin } = require('../models');
 const logger = require('../utils/logger');
 
 // Authenticate JWT token
 const authenticateToken = async (req, res, next) => {
   try {
+    // ✅ Get Admin model from req.db (injected by ensureDatabase middleware)
+    const { Admin } = req.db;
+    
+    if (!Admin) {
+      logger.error('Admin model not available in request');
+      return res.status(503).json({
+        success: false,
+        message: 'Database not initialized',
+        code: 'DB_NOT_INITIALIZED'
+      });
+    }
+
     const authHeader = req.headers['authorization'];
     let token = null;
 
@@ -190,6 +201,15 @@ const requireSuperAdmin = (req, res, next) => {
 // Optional authentication (for public endpoints that can benefit from auth data)
 const optionalAuth = async (req, res, next) => {
   try {
+    // ✅ Get Admin model from req.db
+    const { Admin } = req.db;
+    
+    if (!Admin) {
+      req.admin = null;
+      req.adminId = null;
+      return next();
+    }
+
     const authHeader = req.headers['authorization'];
     let token = null;
 
