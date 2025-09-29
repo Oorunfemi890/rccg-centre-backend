@@ -1,7 +1,6 @@
-// controllers/attendanceController.js
+// controllers/attendanceController.js - FIXED: No direct model imports
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
-const { Attendance, MemberAttendance, Member, Admin } = require("../models");
 const logger = require("../utils/logger");
 
 const attendanceController = {
@@ -10,6 +9,9 @@ const attendanceController = {
   // @access  Private
   getAttendanceRecords: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance, MemberAttendance, Member, Admin } = req.db;
+
       const {
         page = 1,
         limit = 10,
@@ -39,30 +41,31 @@ const attendanceController = {
       const offset = (parseInt(page) - 1) * parseInt(limit);
 
       // Fetch attendance records
-      const { count, rows: attendanceRecords } = await Attendance.findAndCountAll({
-        where: whereClause,
-        limit: parseInt(limit),
-        offset: offset,
-        order: [[sortBy, sortOrder.toUpperCase()]],
-        include: [
-          {
-            model: Admin,
-            as: "recordedBy",
-            attributes: ["id", "name", "position"],
-          },
-          {
-            model: MemberAttendance,
-            as: "memberAttendances",
-            include: [
-              {
-                model: Member,
-                as: "member",
-                attributes: ["id", "name", "department"],
-              },
-            ],
-          },
-        ],
-      });
+      const { count, rows: attendanceRecords } =
+        await Attendance.findAndCountAll({
+          where: whereClause,
+          limit: parseInt(limit),
+          offset: offset,
+          order: [[sortBy, sortOrder.toUpperCase()]],
+          include: [
+            {
+              model: Admin,
+              as: "recordedBy",
+              attributes: ["id", "name", "position"],
+            },
+            {
+              model: MemberAttendance,
+              as: "memberAttendances",
+              include: [
+                {
+                  model: Member,
+                  as: "member",
+                  attributes: ["id", "name", "department"],
+                },
+              ],
+            },
+          ],
+        });
 
       // Calculate pagination info
       const totalPages = Math.ceil(count / parseInt(limit));
@@ -70,7 +73,7 @@ const attendanceController = {
       const hasPrevPage = parseInt(page) > 1;
 
       // Format the data for frontend
-      const formattedRecords = attendanceRecords.map(record => ({
+      const formattedRecords = attendanceRecords.map((record) => ({
         id: record.id,
         date: record.date,
         serviceType: record.serviceType,
@@ -80,19 +83,20 @@ const attendanceController = {
         children: record.children,
         visitors: record.visitors,
         notes: record.notes,
-        recordedBy: record.recordedBy?.name || 'Unknown',
+        recordedBy: record.recordedBy?.name || "Unknown",
         recordedById: record.recordedById,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
-        memberAttendances: record.memberAttendances?.map(ma => ({
-          id: ma.id,
-          memberId: ma.memberId,
-          memberName: ma.member?.name,
-          memberDepartment: ma.member?.department,
-          present: ma.present,
-          timeArrived: ma.timeArrived,
-          notes: ma.notes
-        })) || []
+        memberAttendances:
+          record.memberAttendances?.map((ma) => ({
+            id: ma.id,
+            memberId: ma.memberId,
+            memberName: ma.member?.name,
+            memberDepartment: ma.member?.department,
+            present: ma.present,
+            timeArrived: ma.timeArrived,
+            notes: ma.notes,
+          })) || [],
       }));
 
       res.json({
@@ -122,6 +126,9 @@ const attendanceController = {
   // @access  Private
   getAttendanceStats: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance } = req.db;
+
       const { period = "month" } = req.query;
 
       const stats = await Attendance.getStatistics(period);
@@ -182,6 +189,9 @@ const attendanceController = {
   // @access  Private
   getMembersForAttendance: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const members = await Member.findAll({
         where: { isActive: true },
         attributes: ["id", "name", "department"],
@@ -207,6 +217,9 @@ const attendanceController = {
   // @access  Private
   getAttendanceById: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance, MemberAttendance, Member, Admin } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -255,18 +268,19 @@ const attendanceController = {
         children: attendance.children,
         visitors: attendance.visitors,
         notes: attendance.notes,
-        recordedBy: attendance.recordedBy?.name || 'Unknown',
+        recordedBy: attendance.recordedBy?.name || "Unknown",
         recordedById: attendance.recordedById,
         createdAt: attendance.createdAt,
         updatedAt: attendance.updatedAt,
-        members: attendance.memberAttendances?.map(ma => ({
-          memberId: ma.memberId,
-          name: ma.member?.name,
-          department: ma.member?.department,
-          present: ma.present,
-          timeArrived: ma.timeArrived,
-          notes: ma.notes
-        })) || []
+        members:
+          attendance.memberAttendances?.map((ma) => ({
+            memberId: ma.memberId,
+            name: ma.member?.name,
+            department: ma.member?.department,
+            present: ma.present,
+            timeArrived: ma.timeArrived,
+            notes: ma.notes,
+          })) || [],
       };
 
       res.json({
@@ -288,6 +302,9 @@ const attendanceController = {
   // @access  Private
   createAttendance: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance, MemberAttendance, Admin } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -317,7 +334,8 @@ const attendanceController = {
       if (existingAttendance) {
         return res.status(400).json({
           success: false,
-          message: "Attendance record already exists for this date and service type",
+          message:
+            "Attendance record already exists for this date and service type",
         });
       }
 
@@ -412,6 +430,9 @@ const attendanceController = {
   // @access  Private
   updateAttendance: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance, MemberAttendance, Admin } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -454,7 +475,8 @@ const attendanceController = {
         if (existingAttendance) {
           return res.status(400).json({
             success: false,
-            message: "Another attendance record already exists for this date and service type",
+            message:
+              "Another attendance record already exists for this date and service type",
           });
         }
       }
@@ -555,6 +577,9 @@ const attendanceController = {
   // @access  Private
   deleteAttendance: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance, MemberAttendance } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -619,6 +644,9 @@ const attendanceController = {
   // @access  Private
   generateReport: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance, Admin } = req.db;
+
       const { startDate, endDate, serviceType, format = "csv" } = req.body;
 
       // Build where clause
@@ -680,7 +708,7 @@ const attendanceController = {
         res.json({
           success: true,
           message: "Attendance report generated successfully",
-          data: attendanceRecords.map(record => ({
+          data: attendanceRecords.map((record) => ({
             id: record.id,
             date: record.date,
             serviceType: record.serviceType,
@@ -696,8 +724,9 @@ const attendanceController = {
         });
       }
 
-      logger.info(`Attendance report generated by ${req.admin.name} - Format: ${format}, Records: ${attendanceRecords.length}`);
-
+      logger.info(
+        `Attendance report generated by ${req.admin.name} - Format: ${format}, Records: ${attendanceRecords.length}`
+      );
     } catch (error) {
       logger.error("Generate attendance report error:", error);
       res.status(500).json({

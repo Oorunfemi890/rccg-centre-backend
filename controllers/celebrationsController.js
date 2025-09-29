@@ -1,39 +1,41 @@
-// controllers/celebrationController.js - Backend Controller
-const { Op } = require('sequelize');
-const { Celebration, Member, Admin } = require('../models');
-const logger = require('../utils/logger');
-const emailService = require('../services/emailService');
-const { deleteImage } = require('../config/cloudinary');
+// controllers/celebrationController.js - FIXED: No direct model imports
+const { Op } = require("sequelize");
+const logger = require("../utils/logger");
+const emailService = require("../services/emailService");
+const { deleteImage } = require("../config/cloudinary");
 
 const celebrationController = {
   // Get all celebrations with filtering and pagination (Admin only)
   getCelebrations: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration, Member, Admin } = req.db;
+
       const {
         page = 1,
         limit = 10,
-        status = 'all',
-        type = 'all',
-        search = '',
-        sortBy = 'createdAt',
-        sortOrder = 'DESC',
-        memberType = 'all' // 'member', 'public', 'all'
+        status = "all",
+        type = "all",
+        search = "",
+        sortBy = "createdAt",
+        sortOrder = "DESC",
+        memberType = "all", // 'member', 'public', 'all'
       } = req.query;
 
       // Build where clause
       let whereClause = {};
 
-      if (status !== 'all') {
+      if (status !== "all") {
         whereClause.status = status;
       }
 
-      if (type !== 'all') {
+      if (type !== "all") {
         whereClause.type = type;
       }
 
-      if (memberType === 'member') {
+      if (memberType === "member") {
         whereClause.memberId = { [Op.not]: null };
-      } else if (memberType === 'public') {
+      } else if (memberType === "public") {
         whereClause.memberId = null;
       }
 
@@ -42,7 +44,7 @@ const celebrationController = {
           { name: { [Op.iLike]: `%${search}%` } },
           { type: { [Op.iLike]: `%${search}%` } },
           { phone: { [Op.iLike]: `%${search}%` } },
-          { email: { [Op.iLike]: `%${search}%` } }
+          { email: { [Op.iLike]: `%${search}%` } },
         ];
       }
 
@@ -58,28 +60,28 @@ const celebrationController = {
         include: [
           {
             model: Member,
-            as: 'member',
-            attributes: ['id', 'name', 'email', 'phone', 'department'],
-            required: false
+            as: "member",
+            attributes: ["id", "name", "email", "phone", "department"],
+            required: false,
           },
           {
             model: Admin,
-            as: 'approvedBy',
-            attributes: ['id', 'name', 'position'],
-            required: false
-          }
-        ]
+            as: "approvedBy",
+            attributes: ["id", "name", "position"],
+            required: false,
+          },
+        ],
       });
 
       // Add derived fields
-      const enrichedCelebrations = celebrations.map(celebration => {
+      const enrichedCelebrations = celebrations.map((celebration) => {
         const celebrationData = celebration.toJSON();
         return {
           ...celebrationData,
           isFromMember: !!celebration.memberId,
-          source: celebration.memberId ? 'member' : 'public',
+          source: celebration.memberId ? "member" : "public",
           upcomingDays: celebration.daysUntilCelebration(),
-          isUpcoming: celebration.isUpcoming()
+          isUpcoming: celebration.isUpcoming(),
         };
       });
 
@@ -90,7 +92,7 @@ const celebrationController = {
 
       res.json({
         success: true,
-        message: 'Celebrations retrieved successfully',
+        message: "Celebrations retrieved successfully",
         data: enrichedCelebrations,
         pagination: {
           currentPage: parseInt(page),
@@ -98,14 +100,14 @@ const celebrationController = {
           totalRecords: count,
           hasNextPage,
           hasPrevPage,
-          limit: parseInt(limit)
-        }
+          limit: parseInt(limit),
+        },
       });
     } catch (error) {
-      logger.error('Get celebrations error:', error);
+      logger.error("Get celebrations error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve celebrations'
+        message: "Failed to retrieve celebrations",
       });
     }
   },
@@ -113,6 +115,9 @@ const celebrationController = {
   // Get celebration statistics
   getCelebrationsStats: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const thisMonth = new Date();
       thisMonth.setDate(1);
 
@@ -124,30 +129,36 @@ const celebrationController = {
         thisMonthCelebrations,
         memberCelebrations,
         publicCelebrations,
-        typeStats
+        typeStats,
       ] = await Promise.all([
         Celebration.count(), // Total celebrations
-        Celebration.count({ where: { status: 'pending' } }), // Pending
-        Celebration.count({ where: { status: 'approved' } }), // Approved  
-        Celebration.count({ where: { status: 'rejected' } }), // Rejected
+        Celebration.count({ where: { status: "pending" } }), // Pending
+        Celebration.count({ where: { status: "approved" } }), // Approved
+        Celebration.count({ where: { status: "rejected" } }), // Rejected
         Celebration.count({
           where: {
             createdAt: {
-              [Op.gte]: thisMonth
-            }
-          }
+              [Op.gte]: thisMonth,
+            },
+          },
         }), // This month submissions
         Celebration.count({ where: { memberId: { [Op.not]: null } } }), // From members
         Celebration.count({ where: { memberId: null } }), // From public
         Celebration.findAll({
           attributes: [
-            'type', 
-            [Celebration.sequelize.fn('COUNT', Celebration.sequelize.col('id')), 'count']
+            "type",
+            [
+              Celebration.sequelize.fn(
+                "COUNT",
+                Celebration.sequelize.col("id")
+              ),
+              "count",
+            ],
           ],
-          where: { status: 'approved' },
-          group: ['type'],
-          raw: true
-        }) // Type breakdown
+          where: { status: "approved" },
+          group: ["type"],
+          raw: true,
+        }), // Type breakdown
       ]);
 
       res.json({
@@ -167,15 +178,15 @@ const celebrationController = {
           memberVsPublicRatio: {
             members: memberCelebrations,
             public: publicCelebrations,
-            total: totalCelebrations
-          }
-        }
+            total: totalCelebrations,
+          },
+        },
       });
     } catch (error) {
-      logger.error('Get celebration statistics error:', error);
+      logger.error("Get celebration statistics error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve celebration statistics'
+        message: "Failed to retrieve celebration statistics",
       });
     }
   },
@@ -183,30 +194,33 @@ const celebrationController = {
   // Get upcoming celebrations
   getUpcomingCelebrations: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const { limit = 10, days = 30 } = req.query;
 
       const upcomingCelebrations = await Celebration.getUpcomingCelebrations(
         parseInt(days)
       );
 
-      const enrichedCelebrations = upcomingCelebrations.map(celebration => ({
+      const enrichedCelebrations = upcomingCelebrations.map((celebration) => ({
         ...celebration.toJSON(),
         isFromMember: !!celebration.memberId,
-        source: celebration.memberId ? 'member' : 'public',
+        source: celebration.memberId ? "member" : "public",
         upcomingDays: celebration.daysUntilCelebration(),
-        isUpcoming: celebration.isUpcoming()
+        isUpcoming: celebration.isUpcoming(),
       }));
 
       res.json({
         success: true,
-        message: 'Upcoming celebrations retrieved successfully',
-        data: enrichedCelebrations.slice(0, parseInt(limit))
+        message: "Upcoming celebrations retrieved successfully",
+        data: enrichedCelebrations.slice(0, parseInt(limit)),
       });
     } catch (error) {
-      logger.error('Get upcoming celebrations error:', error);
+      logger.error("Get upcoming celebrations error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve upcoming celebrations'
+        message: "Failed to retrieve upcoming celebrations",
       });
     }
   },
@@ -214,29 +228,32 @@ const celebrationController = {
   // Get celebration by ID
   getCelebrationById: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration, Member, Admin } = req.db;
+
       const { id } = req.params;
 
       const celebration = await Celebration.findByPk(id, {
         include: [
           {
             model: Member,
-            as: 'member',
-            attributes: ['id', 'name', 'email', 'phone', 'department'],
-            required: false
+            as: "member",
+            attributes: ["id", "name", "email", "phone", "department"],
+            required: false,
           },
           {
             model: Admin,
-            as: 'approvedBy',
-            attributes: ['id', 'name', 'position'],
-            required: false
-          }
-        ]
+            as: "approvedBy",
+            attributes: ["id", "name", "position"],
+            required: false,
+          },
+        ],
       });
 
       if (!celebration) {
         return res.status(404).json({
           success: false,
-          message: 'Celebration not found'
+          message: "Celebration not found",
         });
       }
 
@@ -244,20 +261,20 @@ const celebrationController = {
 
       res.json({
         success: true,
-        message: 'Celebration details retrieved successfully',
+        message: "Celebration details retrieved successfully",
         data: {
           ...celebrationData,
           isFromMember: !!celebration.memberId,
-          source: celebration.memberId ? 'member' : 'public',
+          source: celebration.memberId ? "member" : "public",
           upcomingDays: celebration.daysUntilCelebration(),
-          isUpcoming: celebration.isUpcoming()
-        }
+          isUpcoming: celebration.isUpcoming(),
+        },
       });
     } catch (error) {
-      logger.error('Get celebration error:', error);
+      logger.error("Get celebration error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve celebration details'
+        message: "Failed to retrieve celebration details",
       });
     }
   },
@@ -265,12 +282,16 @@ const celebrationController = {
   // Submit celebration request (Public endpoint)
   submitCelebration: async (req, res) => {
     try {
-      const { type, name, memberId, phone, email, message, month, date, year } = req.body;
+      // ✅ Get models from req.db
+      const { Celebration, Member } = req.db;
+
+      const { type, name, memberId, phone, email, message, month, date, year } =
+        req.body;
 
       // Handle uploaded pictures
       let pictures = [];
       if (req.files && req.files.length > 0) {
-        pictures = req.files.map(file => file.path); // Cloudinary URLs
+        pictures = req.files.map((file) => file.path); // Cloudinary URLs
       }
 
       // Check if this is from a known member by phone/email
@@ -279,16 +300,20 @@ const celebrationController = {
         const whereClause = {};
         if (phone) whereClause.phone = phone;
         if (email) whereClause.email = email;
-        
+
         const member = await Member.findOne({
           where: {
-            [Op.or]: Object.entries(whereClause).map(([key, value]) => ({ [key]: value }))
-          }
+            [Op.or]: Object.entries(whereClause).map(([key, value]) => ({
+              [key]: value,
+            })),
+          },
         });
-        
+
         if (member) {
           resolvedMemberId = member.id;
-          logger.info(`Matched celebration to member: ${member.name} (${member.id})`);
+          logger.info(
+            `Matched celebration to member: ${member.name} (${member.id})`
+          );
         }
       }
 
@@ -304,26 +329,26 @@ const celebrationController = {
         date: parseInt(date),
         year: year ? parseInt(year) : null,
         pictures,
-        status: 'pending'
+        status: "pending",
       });
 
       logger.info(`New celebration request submitted: ${type} for ${name}`, {
         celebrationId: newCelebration.id,
-        source: resolvedMemberId ? 'member' : 'public',
-        memberId: resolvedMemberId
+        source: resolvedMemberId ? "member" : "public",
+        memberId: resolvedMemberId,
       });
 
       // Emit real-time notification to admins
-      const io = req.app.get('io');
+      const io = req.app.get("io");
       if (io) {
-        io.to('admin-room').emit('celebration-submitted', {
+        io.to("admin-room").emit("celebration-submitted", {
           celebration: {
             id: newCelebration.id,
             type: newCelebration.type,
             name: newCelebration.name,
-            source: resolvedMemberId ? 'member' : 'public'
+            source: resolvedMemberId ? "member" : "public",
           },
-          timestamp: new Date()
+          timestamp: new Date(),
         });
       }
 
@@ -333,27 +358,28 @@ const celebrationController = {
           // await emailService.sendCelebrationConfirmationEmail(newCelebration);
           logger.info(`Confirmation email sent to: ${email}`);
         } catch (emailError) {
-          logger.error('Failed to send confirmation email:', emailError);
+          logger.error("Failed to send confirmation email:", emailError);
           // Don't fail the request if email fails
         }
       }
 
       res.status(201).json({
         success: true,
-        message: 'Celebration request submitted successfully! We will review it shortly.',
+        message:
+          "Celebration request submitted successfully! We will review it shortly.",
         data: {
           id: newCelebration.id,
           type: newCelebration.type,
           name: newCelebration.name,
           status: newCelebration.status,
-          submissionDate: newCelebration.createdAt
-        }
+          submissionDate: newCelebration.createdAt,
+        },
       });
     } catch (error) {
-      logger.error('Submit celebration error:', error);
+      logger.error("Submit celebration error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to submit celebration request. Please try again.'
+        message: "Failed to submit celebration request. Please try again.",
       });
     }
   },
@@ -361,6 +387,9 @@ const celebrationController = {
   // Update celebration status (approve/reject) - Admin only
   updateCelebrationStatus: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration, Member } = req.db;
+
       const { id } = req.params;
       const { status, rejectionReason } = req.body;
 
@@ -368,29 +397,29 @@ const celebrationController = {
         include: [
           {
             model: Member,
-            as: 'member',
-            attributes: ['name', 'email'],
-            required: false
-          }
-        ]
+            as: "member",
+            attributes: ["name", "email"],
+            required: false,
+          },
+        ],
       });
 
       if (!celebration) {
         return res.status(404).json({
           success: false,
-          message: 'Celebration not found'
+          message: "Celebration not found",
         });
       }
 
       let updateData = {
         status,
-        approvedById: req.admin.id
+        approvedById: req.admin.id,
       };
 
-      if (status === 'approved') {
-        updateData.acknowledgedDate = new Date().toISOString().split('T')[0];
+      if (status === "approved") {
+        updateData.acknowledgedDate = new Date().toISOString().split("T")[0];
         updateData.rejectionReason = null;
-      } else if (status === 'rejected') {
+      } else if (status === "rejected") {
         updateData.rejectionReason = rejectionReason;
         updateData.acknowledgedDate = null;
       }
@@ -398,12 +427,15 @@ const celebrationController = {
       await celebration.update(updateData);
 
       // Send email notification if approved and email is available
-      if (status === 'approved' && (celebration.email || celebration.member?.email)) {
+      if (
+        status === "approved" &&
+        (celebration.email || celebration.member?.email)
+      ) {
         try {
           // await emailService.sendCelebrationApprovalEmail(celebration);
           logger.info(`Approval email sent for celebration: ${celebration.id}`);
         } catch (emailError) {
-          logger.error('Failed to send approval email:', emailError);
+          logger.error("Failed to send approval email:", emailError);
           // Don't fail the request if email fails
         }
       }
@@ -413,36 +445,36 @@ const celebrationController = {
         {
           celebrationId: celebration.id,
           adminId: req.admin.id,
-          source: celebration.memberId ? 'member' : 'public'
+          source: celebration.memberId ? "member" : "public",
         }
       );
 
       // Emit real-time notification
-      const io = req.app.get('io');
+      const io = req.app.get("io");
       if (io) {
-        io.to('admin-room').emit('celebration-status-updated', {
+        io.to("admin-room").emit("celebration-status-updated", {
           celebration: {
             id: celebration.id,
             name: celebration.name,
             type: celebration.type,
             status,
-            source: celebration.memberId ? 'member' : 'public'
+            source: celebration.memberId ? "member" : "public",
           },
           updatedBy: req.admin.name,
-          timestamp: new Date()
+          timestamp: new Date(),
         });
       }
 
       res.json({
         success: true,
         message: `Celebration ${status} successfully`,
-        data: celebration
+        data: celebration,
       });
     } catch (error) {
-      logger.error('Update celebration status error:', error);
+      logger.error("Update celebration status error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to update celebration status'
+        message: "Failed to update celebration status",
       });
     }
   },
@@ -450,13 +482,16 @@ const celebrationController = {
   // Delete celebration - Admin only
   deleteCelebration: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const { id } = req.params;
 
       const celebration = await Celebration.findByPk(id);
       if (!celebration) {
         return res.status(404).json({
           success: false,
-          message: 'Celebration not found'
+          message: "Celebration not found",
         });
       }
 
@@ -464,7 +499,7 @@ const celebrationController = {
         name: celebration.name,
         type: celebration.type,
         id: celebration.id,
-        source: celebration.memberId ? 'member' : 'public'
+        source: celebration.memberId ? "member" : "public",
       };
 
       // Delete associated images from Cloudinary
@@ -478,7 +513,10 @@ const celebrationController = {
             }
           }
         } catch (imageDeleteError) {
-          logger.error('Failed to delete images from Cloudinary:', imageDeleteError);
+          logger.error(
+            "Failed to delete images from Cloudinary:",
+            imageDeleteError
+          );
         }
       }
 
@@ -489,29 +527,29 @@ const celebrationController = {
         {
           celebrationId: celebrationInfo.id,
           adminId: req.admin.id,
-          source: celebrationInfo.source
+          source: celebrationInfo.source,
         }
       );
 
       // Emit real-time notification
-      const io = req.app.get('io');
+      const io = req.app.get("io");
       if (io) {
-        io.to('admin-room').emit('celebration-deleted', {
+        io.to("admin-room").emit("celebration-deleted", {
           celebration: celebrationInfo,
           deletedBy: req.admin.name,
-          timestamp: new Date()
+          timestamp: new Date(),
         });
       }
 
       res.json({
         success: true,
-        message: 'Celebration deleted successfully'
+        message: "Celebration deleted successfully",
       });
     } catch (error) {
-      logger.error('Delete celebration error:', error);
+      logger.error("Delete celebration error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to delete celebration'
+        message: "Failed to delete celebration",
       });
     }
   },
@@ -519,19 +557,27 @@ const celebrationController = {
   // Export celebrations to CSV - Admin only
   exportCelebrations: async (req, res) => {
     try {
-      const { format = 'csv', status = 'all', type = 'all', memberType = 'all' } = req.query;
+      // ✅ Get models from req.db
+      const { Celebration, Member, Admin } = req.db;
+
+      const {
+        format = "csv",
+        status = "all",
+        type = "all",
+        memberType = "all",
+      } = req.query;
 
       // Build where clause
       let whereClause = {};
-      if (status !== 'all') {
+      if (status !== "all") {
         whereClause.status = status;
       }
-      if (type !== 'all') {
+      if (type !== "all") {
         whereClause.type = type;
       }
-      if (memberType === 'member') {
+      if (memberType === "member") {
         whereClause.memberId = { [Op.not]: null };
-      } else if (memberType === 'public') {
+      } else if (memberType === "public") {
         whereClause.memberId = null;
       }
 
@@ -540,69 +586,72 @@ const celebrationController = {
         include: [
           {
             model: Member,
-            as: 'member',
-            attributes: ['name', 'email', 'department'],
-            required: false
+            as: "member",
+            attributes: ["name", "email", "department"],
+            required: false,
           },
           {
             model: Admin,
-            as: 'approvedBy',
-            attributes: ['name'],
-            required: false
-          }
+            as: "approvedBy",
+            attributes: ["name"],
+            required: false,
+          },
         ],
-        order: [['createdAt', 'DESC']]
+        order: [["createdAt", "DESC"]],
       });
 
-      if (format === 'csv') {
+      if (format === "csv") {
         // Generate CSV content
-        const csvHeaders = 'Name,Type,Phone,Email,Source,Month,Date,Status,Message,Submitted Date,Acknowledged Date,Approved By\n';
+        const csvHeaders =
+          "Name,Type,Phone,Email,Source,Month,Date,Status,Message,Submitted Date,Acknowledged Date,Approved By\n";
         const csvContent = celebrations
-          .map(celebration =>
+          .map((celebration) =>
             [
               `"${celebration.name}"`,
               `"${celebration.type}"`,
               `"${celebration.phone}"`,
-              `"${celebration.email || ''}"`,
-              `"${celebration.memberId ? 'Member' : 'Public'}"`,
+              `"${celebration.email || ""}"`,
+              `"${celebration.memberId ? "Member" : "Public"}"`,
               celebration.month,
               celebration.date,
               celebration.status,
-              `"${celebration.message || ''}"`,
-              new Date(celebration.createdAt).toISOString().split('T')[0],
-              celebration.acknowledgedDate || '',
-              `"${celebration.approvedBy?.name || ''}"`
-            ].join(',')
+              `"${celebration.message || ""}"`,
+              new Date(celebration.createdAt).toISOString().split("T")[0],
+              celebration.acknowledgedDate || "",
+              `"${celebration.approvedBy?.name || ""}"`,
+            ].join(",")
           )
-          .join('\n');
+          .join("\n");
 
         const fullCsv = csvHeaders + csvContent;
 
-        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader("Content-Type", "text/csv");
         res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="celebrations_export_${new Date().toISOString().split('T')[0]}.csv"`
+          "Content-Disposition",
+          `attachment; filename="celebrations_export_${
+            new Date().toISOString().split("T")[0]
+          }.csv"`
         );
         res.send(fullCsv);
       } else {
         // Return JSON format with enriched data
-        const enrichedData = celebrations.map(celebration => ({
+        const enrichedData = celebrations.map((celebration) => ({
           ...celebration.toJSON(),
-          source: celebration.memberId ? 'member' : 'public',
-          isFromMember: !!celebration.memberId
+          source: celebration.memberId ? "member" : "public",
+          isFromMember: !!celebration.memberId,
         }));
 
         res.json({
           success: true,
           data: enrichedData,
-          count: enrichedData.length
+          count: enrichedData.length,
         });
       }
     } catch (error) {
-      logger.error('Export celebrations error:', error);
+      logger.error("Export celebrations error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to export celebrations'
+        message: "Failed to export celebrations",
       });
     }
   },
@@ -610,24 +659,27 @@ const celebrationController = {
   // Get today's celebrations - Admin only
   getTodaysCelebrations: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const todaysCelebrations = await Celebration.getTodaysCelebrations();
-      
-      const enrichedCelebrations = todaysCelebrations.map(celebration => ({
+
+      const enrichedCelebrations = todaysCelebrations.map((celebration) => ({
         ...celebration.toJSON(),
         isFromMember: !!celebration.memberId,
-        source: celebration.memberId ? 'member' : 'public'
+        source: celebration.memberId ? "member" : "public",
       }));
 
       res.json({
         success: true,
         message: "Today's celebrations retrieved successfully",
-        data: enrichedCelebrations
+        data: enrichedCelebrations,
       });
     } catch (error) {
       logger.error("Get today's celebrations error:", error);
       res.status(500).json({
         success: false,
-        message: "Failed to retrieve today's celebrations"
+        message: "Failed to retrieve today's celebrations",
       });
     }
   },
@@ -635,36 +687,39 @@ const celebrationController = {
   // Get celebrations by month - Admin only
   getCelebrationsByMonth: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const { month, year = new Date().getFullYear() } = req.query;
 
       if (!month || month < 1 || month > 12) {
         return res.status(400).json({
           success: false,
-          message: 'Valid month (1-12) is required'
+          message: "Valid month (1-12) is required",
         });
       }
 
       const celebrations = await Celebration.getCelebrationsByMonth(
-        parseInt(month), 
+        parseInt(month),
         parseInt(year)
       );
-      
-      const enrichedCelebrations = celebrations.map(celebration => ({
+
+      const enrichedCelebrations = celebrations.map((celebration) => ({
         ...celebration.toJSON(),
         isFromMember: !!celebration.memberId,
-        source: celebration.memberId ? 'member' : 'public'
+        source: celebration.memberId ? "member" : "public",
       }));
 
       res.json({
         success: true,
-        message: 'Monthly celebrations retrieved successfully',
-        data: enrichedCelebrations
+        message: "Monthly celebrations retrieved successfully",
+        data: enrichedCelebrations,
       });
     } catch (error) {
-      logger.error('Get monthly celebrations error:', error);
+      logger.error("Get monthly celebrations error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve monthly celebrations'
+        message: "Failed to retrieve monthly celebrations",
       });
     }
   },
@@ -672,19 +727,22 @@ const celebrationController = {
   // Get pending celebrations count - For dashboard
   getPendingCount: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const pendingCount = await Celebration.count({
-        where: { status: 'pending' }
+        where: { status: "pending" },
       });
 
       res.json({
         success: true,
-        data: { count: pendingCount }
+        data: { count: pendingCount },
       });
     } catch (error) {
-      logger.error('Get pending count error:', error);
+      logger.error("Get pending count error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to get pending celebrations count'
+        message: "Failed to get pending celebrations count",
       });
     }
   },
@@ -692,26 +750,29 @@ const celebrationController = {
   // Bulk approve celebrations - Admin only
   bulkApproveCelebrations: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const { celebrationIds } = req.body;
 
       if (!Array.isArray(celebrationIds) || celebrationIds.length === 0) {
         return res.status(400).json({
           success: false,
-          message: 'Please provide an array of celebration IDs'
+          message: "Please provide an array of celebration IDs",
         });
       }
 
       const updateData = {
-        status: 'approved',
+        status: "approved",
         approvedById: req.admin.id,
-        acknowledgedDate: new Date().toISOString().split('T')[0]
+        acknowledgedDate: new Date().toISOString().split("T")[0],
       };
 
       const [updatedCount] = await Celebration.update(updateData, {
         where: {
           id: celebrationIds,
-          status: 'pending'
-        }
+          status: "pending",
+        },
       });
 
       logger.info(
@@ -720,25 +781,25 @@ const celebrationController = {
       );
 
       // Emit real-time notification
-      const io = req.app.get('io');
+      const io = req.app.get("io");
       if (io) {
-        io.to('admin-room').emit('celebrations-bulk-approved', {
+        io.to("admin-room").emit("celebrations-bulk-approved", {
           count: updatedCount,
           approvedBy: req.admin.name,
-          timestamp: new Date()
+          timestamp: new Date(),
         });
       }
 
       res.json({
         success: true,
         message: `Successfully approved ${updatedCount} celebrations`,
-        data: { updatedCount }
+        data: { updatedCount },
       });
     } catch (error) {
-      logger.error('Bulk approve celebrations error:', error);
+      logger.error("Bulk approve celebrations error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to bulk approve celebrations'
+        message: "Failed to bulk approve celebrations",
       });
     }
   },
@@ -746,41 +807,67 @@ const celebrationController = {
   // Get celebration trends - For analytics
   getCelebrationTrends: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const { months = 6 } = req.query;
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() - parseInt(months));
 
       const trends = await Celebration.findAll({
         attributes: [
-          [Celebration.sequelize.fn('DATE_TRUNC', 'month', Celebration.sequelize.col('createdAt')), 'month'],
-          [Celebration.sequelize.fn('COUNT', Celebration.sequelize.col('id')), 'count'],
-          'status'
+          [
+            Celebration.sequelize.fn(
+              "DATE_TRUNC",
+              "month",
+              Celebration.sequelize.col("createdAt")
+            ),
+            "month",
+          ],
+          [
+            Celebration.sequelize.fn("COUNT", Celebration.sequelize.col("id")),
+            "count",
+          ],
+          "status",
         ],
         where: {
           createdAt: {
-            [Op.gte]: startDate
-          }
+            [Op.gte]: startDate,
+          },
         },
         group: [
-          Celebration.sequelize.fn('DATE_TRUNC', 'month', Celebration.sequelize.col('createdAt')),
-          'status'
+          Celebration.sequelize.fn(
+            "DATE_TRUNC",
+            "month",
+            Celebration.sequelize.col("createdAt")
+          ),
+          "status",
         ],
-        order: [[Celebration.sequelize.fn('DATE_TRUNC', 'month', Celebration.sequelize.col('createdAt')), 'ASC']],
-        raw: true
+        order: [
+          [
+            Celebration.sequelize.fn(
+              "DATE_TRUNC",
+              "month",
+              Celebration.sequelize.col("createdAt")
+            ),
+            "ASC",
+          ],
+        ],
+        raw: true,
       });
 
       res.json({
         success: true,
-        data: trends
+        data: trends,
       });
     } catch (error) {
-      logger.error('Get celebration trends error:', error);
+      logger.error("Get celebration trends error:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve celebration trends'
+        message: "Failed to retrieve celebration trends",
       });
     }
-  }
+  },
 };
 
 module.exports = celebrationController;
