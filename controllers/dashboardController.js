@@ -1,6 +1,5 @@
-// controllers/dashboardController.js
+// controllers/dashboardController.js - FIXED: No direct model imports
 const { Op } = require("sequelize");
-const { Member, Event, Attendance, Celebration, Admin } = require("../models");
 const logger = require("../utils/logger");
 
 const dashboardController = {
@@ -8,6 +7,9 @@ const dashboardController = {
   // @access  Private
   getStats: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Member, Event, Attendance, Celebration } = req.db;
+
       // Get basic counts
       const [
         totalMembers,
@@ -28,8 +30,8 @@ const dashboardController = {
           },
         }),
         Celebration.count({ where: { status: "pending" } }),
-        dashboardController.getThisWeekAttendance(),
-        dashboardController.getThisMonthAverageAttendance(),
+        dashboardController.getThisWeekAttendance(req.db),
+        dashboardController.getThisMonthAverageAttendance(req.db),
       ]);
 
       res.json({
@@ -57,6 +59,9 @@ const dashboardController = {
   // @access  Private
   getRecentActivities: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Member, Event, Attendance, Celebration } = req.db;
+
       const activities = [];
 
       // Get recent members (last 7 days)
@@ -165,6 +170,9 @@ const dashboardController = {
   // @access  Private
   getUpcomingEvents: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event, Admin } = req.db;
+
       const { limit = 5 } = req.query;
 
       const upcomingEvents = await Event.findAll({
@@ -203,6 +211,9 @@ const dashboardController = {
   // @access  Private
   getAttendanceSummary: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Attendance } = req.db;
+
       const { period = "week" } = req.query;
 
       let startDate;
@@ -266,6 +277,9 @@ const dashboardController = {
   // @access  Private
   getMemberGrowth: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const { period = "year" } = req.query;
 
       // Get member growth data for the last 12 months
@@ -334,6 +348,9 @@ const dashboardController = {
   // @access  Private
   getQuickStats: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Member, Event, Celebration } = req.db;
+
       const [totalMembers, activeMembers, upcomingEvents, pendingCelebrations] =
         await Promise.all([
           Member.count(),
@@ -375,19 +392,19 @@ const dashboardController = {
 
       switch (type) {
         case "attendance":
-          data = await dashboardController.getAttendanceChartData(period);
+          data = await dashboardController.getAttendanceChartData(req.db, period);
           break;
         case "members":
-          data = await dashboardController.getMembersChartData(period);
+          data = await dashboardController.getMembersChartData(req.db, period);
           break;
         case "events":
-          data = await dashboardController.getEventsChartData(period);
+          data = await dashboardController.getEventsChartData(req.db, period);
           break;
         case "celebrations":
-          data = await dashboardController.getCelebrationsChartData(period);
+          data = await dashboardController.getCelebrationsChartData(req.db, period);
           break;
         default:
-          data = await dashboardController.getAttendanceChartData(period);
+          data = await dashboardController.getAttendanceChartData(req.db, period);
       }
 
       res.json({
@@ -408,8 +425,10 @@ const dashboardController = {
   },
 
   // Helper Methods
-  getThisWeekAttendance: async () => {
+  getThisWeekAttendance: async (db) => {
     try {
+      const { Attendance } = db;
+
       const startOfWeek = new Date();
       startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
       startOfWeek.setHours(0, 0, 0, 0);
@@ -437,8 +456,10 @@ const dashboardController = {
     }
   },
 
-  getThisMonthAverageAttendance: async () => {
+  getThisMonthAverageAttendance: async (db) => {
     try {
+      const { Attendance } = db;
+
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -463,8 +484,10 @@ const dashboardController = {
     }
   },
 
-  getAttendanceChartData: async (period) => {
+  getAttendanceChartData: async (db, period) => {
     try {
+      const { Attendance } = db;
+
       let startDate;
       const now = new Date();
 
@@ -501,8 +524,10 @@ const dashboardController = {
     }
   },
 
-  getMembersChartData: async (period) => {
+  getMembersChartData: async (db, period) => {
     try {
+      const { Member } = db;
+
       const months = [];
       const now = new Date();
       const monthsBack = period === "year" ? 12 : 6;
@@ -537,8 +562,10 @@ const dashboardController = {
     }
   },
 
-  getEventsChartData: async (period) => {
+  getEventsChartData: async (db, period) => {
     try {
+      const { Event } = db;
+
       let startDate;
       const now = new Date();
 
@@ -575,8 +602,10 @@ const dashboardController = {
     }
   },
 
-  getCelebrationsChartData: async (period) => {
+  getCelebrationsChartData: async (db, period) => {
     try {
+      const { Celebration } = db;
+
       let startDate;
       const now = new Date();
 

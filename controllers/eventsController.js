@@ -1,7 +1,6 @@
-// controllers/eventsController.js
+// controllers/eventsController.js - FIXED: No direct model imports
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
-const { Event, Admin } = require("../models");
 const logger = require("../utils/logger");
 
 const eventsController = {
@@ -10,6 +9,9 @@ const eventsController = {
   // @access  Public/Private
   getEvents: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event, Admin } = req.db;
+
       const {
         page = 1,
         limit = 10,
@@ -130,6 +132,9 @@ const eventsController = {
   // @access  Public
   getUpcomingEvents: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event } = req.db;
+
       const { limit = 10 } = req.query;
 
       const events = await Event.getUpcomingEvents(parseInt(limit));
@@ -202,6 +207,9 @@ const eventsController = {
   // @access  Private
   getEventsStats: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event } = req.db;
+
       const [
         totalEvents,
         upcomingEvents,
@@ -237,6 +245,9 @@ const eventsController = {
   // @access  Public/Private
   getEventById: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event, Admin } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -316,6 +327,9 @@ const eventsController = {
   // @access  Private
   createEvent: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event, Admin } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -448,6 +462,9 @@ const eventsController = {
   // @access  Private
   updateEvent: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event, Admin } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -578,6 +595,9 @@ const eventsController = {
   // @access  Private
   updateEventAttendance: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -649,6 +669,9 @@ const eventsController = {
   // @access  Private
   duplicateEvent: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -740,6 +763,9 @@ const eventsController = {
   // @access  Private
   deleteEvent: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -798,6 +824,9 @@ const eventsController = {
   // @access  Private
   exportEvents: async (req, res) => {
     try {
+      // ✅ Get models from req.db
+      const { Event, Admin } = req.db;
+
       const { format = "csv", status = "all", category = "all" } = req.query;
 
       // Build where clause

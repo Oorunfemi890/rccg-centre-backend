@@ -1,6 +1,5 @@
-// controllers/publicController.js
+// controllers/publicController.js - FIXED: No direct model imports
 const { Op } = require("sequelize");
-const { Celebration } = require("../models");
 const celebrationController = require("./celebrationsController");
 const logger = require("../utils/logger");
 
@@ -84,6 +83,9 @@ class PublicController {
   // Check celebration status by phone number
   async getCelebrationStatus(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Celebration } = req.db;
+
       const { phone } = req.params;
 
       const celebrations = await Celebration.findAll({
