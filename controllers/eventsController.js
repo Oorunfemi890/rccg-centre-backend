@@ -1,9 +1,170 @@
-// controllers/eventsController.js - FIXED: No direct model imports
+// controllers/eventsController.js - PRODUCTION READY WITH VALIDATION
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const logger = require("../utils/logger");
 
 const eventsController = {
+  // @desc    Create new event
+  // @route   POST /api/events
+  // @access  Private
+  createEvent: async (req, res) => {
+    try {
+      // ✅ Get models from req.db
+      const { Event, Admin } = req.db;
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        logger.error('Event validation failed:', errors.array());
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const {
+        title,
+        description,
+        date,
+        time,
+        endTime,
+        location,
+        category,
+        maxAttendees,
+        isRecurring = false,
+        recurringPattern,
+        registrationRequired = false,
+        registrationDeadline,
+        eventFee = 0,
+        tags = [],
+        image
+      } = req.body;
+
+      logger.info('Creating event:', {
+        title,
+        date,
+        time,
+        category,
+        organizerId: req.admin.id
+      });
+
+      // Validate recurring pattern if event is recurring
+      if (isRecurring && !recurringPattern) {
+        return res.status(400).json({
+          success: false,
+          message: "Recurring pattern is required for recurring events",
+        });
+      }
+
+      // Validate date is not in the past
+      const eventDate = new Date(date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (eventDate < today) {
+        return res.status(400).json({
+          success: false,
+          message: "Event date cannot be in the past",
+        });
+      }
+
+      // Handle image - in production, you would upload to cloud storage
+      let imageUrl = null;
+      if (req.file) {
+        imageUrl = req.file.path; // Cloudinary URL
+      } else if (image) {
+        // For frontend compatibility, accept image as string
+        imageUrl = image;
+      }
+
+      // Create new event
+      const newEvent = await Event.create({
+        title: title.trim(),
+        description: description.trim(),
+        date,
+        time,
+        endTime: endTime || null,
+        location: location.trim(),
+        category,
+        maxAttendees: maxAttendees ? parseInt(maxAttendees) : null,
+        isRecurring: Boolean(isRecurring),
+        recurringPattern: recurringPattern || null,
+        registrationRequired: Boolean(registrationRequired),
+        registrationDeadline: registrationDeadline || null,
+        eventFee: eventFee ? parseFloat(eventFee) : 0,
+        tags: Array.isArray(tags) ? tags : [],
+        image: imageUrl,
+        organizerId: req.admin.id,
+        status: "upcoming",
+        currentAttendees: 0,
+      });
+
+      logger.info(
+        `New event created: ${newEvent.title} (${newEvent.id}) by ${req.admin.name}`
+      );
+
+      // Emit real-time notification
+      const io = req.app.get("io");
+      if (io) {
+        io.to("admin-room").emit("event-created", {
+          event: {
+            id: newEvent.id,
+            title: newEvent.title,
+            date: newEvent.date,
+            time: newEvent.time,
+          },
+          createdBy: req.admin.name,
+          timestamp: new Date(),
+        });
+      }
+
+      // Fetch the created event with includes for response
+      const createdEvent = await Event.findByPk(newEvent.id, {
+        include: [
+          {
+            model: Admin,
+            as: "organizer",
+            attributes: ["id", "name", "position"],
+          },
+        ],
+      });
+
+      res.status(201).json({
+        success: true,
+        message: "Event created successfully",
+        data: {
+          id: createdEvent.id,
+          title: createdEvent.title,
+          description: createdEvent.description,
+          date: createdEvent.date,
+          time: createdEvent.time,
+          endTime: createdEvent.endTime,
+          location: createdEvent.location,
+          category: createdEvent.category,
+          maxAttendees: createdEvent.maxAttendees,
+          currentAttendees: createdEvent.currentAttendees,
+          isRecurring: createdEvent.isRecurring,
+          recurringPattern: createdEvent.recurringPattern,
+          status: createdEvent.status,
+          image: createdEvent.image,
+          organizer: createdEvent.organizer?.name,
+          registrationRequired: createdEvent.registrationRequired,
+          registrationDeadline: createdEvent.registrationDeadline,
+          eventFee: createdEvent.eventFee,
+          tags: createdEvent.tags,
+          createdAt: createdEvent.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error("Create event error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to create event",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  },
+
   // @desc    Get all events (public + private depending on auth)
   // @route   GET /api/events
   // @access  Public/Private
@@ -123,119 +284,7 @@ const eventsController = {
       res.status(500).json({
         success: false,
         message: "Failed to retrieve events",
-      });
-    }
-  },
-
-  // @desc    Get upcoming events (public endpoint for website)
-  // @route   GET /api/events/upcoming
-  // @access  Public
-  getUpcomingEvents: async (req, res) => {
-    try {
-      // ✅ Get models from req.db
-      const { Event } = req.db;
-
-      const { limit = 10 } = req.query;
-
-      const events = await Event.getUpcomingEvents(parseInt(limit));
-
-      const formattedEvents = events.map(event => ({
-        id: event.id,
-        title: event.title,
-        description: event.description,
-        date: event.date,
-        time: event.time,
-        endTime: event.endTime,
-        location: event.location,
-        category: event.category,
-        maxAttendees: event.maxAttendees,
-        currentAttendees: event.currentAttendees,
-        status: event.status,
-        image: event.image,
-        organizer: event.organizer?.name || 'Unknown'
-      }));
-
-      res.json({
-        success: true,
-        message: "Upcoming events retrieved successfully",
-        data: formattedEvents,
-      });
-    } catch (error) {
-      logger.error("Get upcoming events error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to retrieve upcoming events",
-      });
-    }
-  },
-
-  // @desc    Get event categories
-  // @route   GET /api/events/categories
-  // @access  Public
-  getEventCategories: async (req, res) => {
-    try {
-      const categories = [
-        "Service",
-        "Conference",
-        "Seminar",
-        "Workshop",
-        "Outreach",
-        "Fellowship",
-        "Youth Event",
-        "Children Event",
-        "Prayer Meeting",
-        "Special Program",
-        "Other",
-      ];
-
-      res.json({
-        success: true,
-        message: "Event categories retrieved successfully",
-        data: categories,
-      });
-    } catch (error) {
-      logger.error("Get categories error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to retrieve categories",
-      });
-    }
-  },
-
-  // @desc    Get event statistics
-  // @route   GET /api/events/stats
-  // @access  Private
-  getEventsStats: async (req, res) => {
-    try {
-      // ✅ Get models from req.db
-      const { Event } = req.db;
-
-      const [
-        totalEvents,
-        upcomingEvents,
-        completedEvents,
-        thisMonthEvents,
-        categoryStats,
-        statusStats,
-      ] = await Event.getStatistics();
-
-      res.json({
-        success: true,
-        message: "Event statistics retrieved successfully",
-        data: {
-          totalEvents,
-          upcomingEvents,
-          completedEvents,
-          thisMonthEvents,
-          categoryStats,
-          statusStats,
-        },
-      });
-    } catch (error) {
-      logger.error("Get event statistics error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to retrieve event statistics",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   },
@@ -318,141 +367,7 @@ const eventsController = {
       res.status(500).json({
         success: false,
         message: "Failed to retrieve event",
-      });
-    }
-  },
-
-  // @desc    Create new event
-  // @route   POST /api/events
-  // @access  Private
-  createEvent: async (req, res) => {
-    try {
-      // ✅ Get models from req.db
-      const { Event, Admin } = req.db;
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
-
-      const {
-        title,
-        description,
-        date,
-        time,
-        endTime,
-        location,
-        category,
-        maxAttendees,
-        isRecurring = false,
-        recurringPattern,
-        registrationRequired = false,
-        registrationDeadline,
-        eventFee = 0,
-        tags = [],
-        image
-      } = req.body;
-
-      // Validate recurring pattern if event is recurring
-      if (isRecurring && !recurringPattern) {
-        return res.status(400).json({
-          success: false,
-          message: "Recurring pattern is required for recurring events",
-        });
-      }
-
-      // Handle image - in production, you would upload to cloud storage
-      let imageUrl = null;
-      if (req.file) {
-        imageUrl = req.file.path; // Cloudinary URL
-      } else if (image) {
-        // For frontend compatibility, accept image as string
-        imageUrl = image;
-      }
-
-      // Create new event
-      const newEvent = await Event.create({
-        title,
-        description,
-        date,
-        time,
-        endTime,
-        location,
-        category,
-        maxAttendees,
-        isRecurring,
-        recurringPattern,
-        registrationRequired,
-        registrationDeadline,
-        eventFee,
-        tags,
-        image: imageUrl,
-        organizerId: req.admin.id,
-        status: "upcoming",
-        currentAttendees: 0,
-      });
-
-      logger.info(
-        `New event created: ${newEvent.title} (${newEvent.id}) by ${req.admin.name}`
-      );
-
-      // Emit real-time notification
-      const io = req.app.get("io");
-      if (io) {
-        io.to("admin-room").emit("event-created", {
-          event: {
-            id: newEvent.id,
-            title: newEvent.title,
-            date: newEvent.date,
-            time: newEvent.time,
-          },
-          createdBy: req.admin.name,
-          timestamp: new Date(),
-        });
-      }
-
-      // Fetch the created event with includes for response
-      const createdEvent = await Event.findByPk(newEvent.id, {
-        include: [
-          {
-            model: Admin,
-            as: "organizer",
-            attributes: ["id", "name", "position"],
-          },
-        ],
-      });
-
-      res.status(201).json({
-        success: true,
-        message: "Event created successfully",
-        data: {
-          id: createdEvent.id,
-          title: createdEvent.title,
-          description: createdEvent.description,
-          date: createdEvent.date,
-          time: createdEvent.time,
-          endTime: createdEvent.endTime,
-          location: createdEvent.location,
-          category: createdEvent.category,
-          maxAttendees: createdEvent.maxAttendees,
-          currentAttendees: createdEvent.currentAttendees,
-          isRecurring: createdEvent.isRecurring,
-          recurringPattern: createdEvent.recurringPattern,
-          status: createdEvent.status,
-          image: createdEvent.image,
-          organizer: createdEvent.organizer?.name,
-          createdAt: createdEvent.createdAt,
-        },
-      });
-    } catch (error) {
-      logger.error("Create event error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to create event",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   },
@@ -511,21 +426,21 @@ const eventsController = {
 
       // Update event
       await event.update({
-        title,
-        description,
-        date,
-        time,
-        endTime,
-        location,
-        category,
-        maxAttendees,
-        isRecurring,
-        recurringPattern,
-        status,
-        registrationRequired,
-        registrationDeadline,
-        eventFee,
-        tags,
+        title: title ? title.trim() : event.title,
+        description: description ? description.trim() : event.description,
+        date: date || event.date,
+        time: time || event.time,
+        endTime: endTime !== undefined ? endTime : event.endTime,
+        location: location ? location.trim() : event.location,
+        category: category || event.category,
+        maxAttendees: maxAttendees !== undefined ? (maxAttendees ? parseInt(maxAttendees) : null) : event.maxAttendees,
+        isRecurring: isRecurring !== undefined ? Boolean(isRecurring) : event.isRecurring,
+        recurringPattern: recurringPattern !== undefined ? recurringPattern : event.recurringPattern,
+        status: status || event.status,
+        registrationRequired: registrationRequired !== undefined ? Boolean(registrationRequired) : event.registrationRequired,
+        registrationDeadline: registrationDeadline !== undefined ? registrationDeadline : event.registrationDeadline,
+        eventFee: eventFee !== undefined ? (eventFee ? parseFloat(eventFee) : 0) : event.eventFee,
+        tags: tags !== undefined ? (Array.isArray(tags) ? tags : []) : event.tags,
         image: imageUrl,
       });
 
@@ -578,6 +493,10 @@ const eventsController = {
           status: updatedEvent.status,
           image: updatedEvent.image,
           organizer: updatedEvent.organizer?.name,
+          registrationRequired: updatedEvent.registrationRequired,
+          registrationDeadline: updatedEvent.registrationDeadline,
+          eventFee: updatedEvent.eventFee,
+          tags: updatedEvent.tags,
           updatedAt: updatedEvent.updatedAt,
         },
       });
@@ -586,174 +505,7 @@ const eventsController = {
       res.status(500).json({
         success: false,
         message: "Failed to update event",
-      });
-    }
-  },
-
-  // @desc    Update event attendance count
-  // @route   PATCH /api/events/:id/attendance
-  // @access  Private
-  updateEventAttendance: async (req, res) => {
-    try {
-      // ✅ Get models from req.db
-      const { Event } = req.db;
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
-
-      const event = await Event.findByPk(req.params.id);
-      if (!event) {
-        return res.status(404).json({
-          success: false,
-          message: "Event not found",
-        });
-      }
-
-      const { attendanceCount } = req.body;
-
-      // Check if attendance exceeds max attendees
-      if (event.maxAttendees && attendanceCount > event.maxAttendees) {
-        return res.status(400).json({
-          success: false,
-          message: "Attendance count cannot exceed maximum attendees",
-        });
-      }
-
-      await event.update({ currentAttendees: attendanceCount });
-
-      logger.info(
-        `Event attendance updated: ${event.title} (${event.id}) - ${attendanceCount} attendees by ${req.admin.name}`
-      );
-
-      // Emit real-time notification
-      const io = req.app.get("io");
-      if (io) {
-        io.to("admin-room").emit("event-attendance-updated", {
-          event: {
-            id: event.id,
-            title: event.title,
-            currentAttendees: attendanceCount,
-          },
-          updatedBy: req.admin.name,
-          timestamp: new Date(),
-        });
-      }
-
-      res.json({
-        success: true,
-        message: "Event attendance updated successfully",
-        data: {
-          id: event.id,
-          title: event.title,
-          currentAttendees: event.currentAttendees,
-          maxAttendees: event.maxAttendees,
-        },
-      });
-    } catch (error) {
-      logger.error("Update event attendance error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to update event attendance",
-      });
-    }
-  },
-
-  // @desc    Duplicate event
-  // @route   POST /api/events/:id/duplicate
-  // @access  Private
-  duplicateEvent: async (req, res) => {
-    try {
-      // ✅ Get models from req.db
-      const { Event } = req.db;
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
-
-      const originalEvent = await Event.findByPk(req.params.id);
-      if (!originalEvent) {
-        return res.status(404).json({
-          success: false,
-          message: "Event not found",
-        });
-      }
-
-      // Create duplicated event with new date (next week)
-      const newDate = new Date();
-      newDate.setDate(newDate.getDate() + 7);
-
-      const duplicatedEvent = await Event.create({
-        title: `${originalEvent.title} (Copy)`,
-        description: originalEvent.description,
-        date: newDate.toISOString().split("T")[0],
-        time: originalEvent.time,
-        endTime: originalEvent.endTime,
-        location: originalEvent.location,
-        category: originalEvent.category,
-        maxAttendees: originalEvent.maxAttendees,
-        isRecurring: originalEvent.isRecurring,
-        recurringPattern: originalEvent.recurringPattern,
-        registrationRequired: originalEvent.registrationRequired,
-        eventFee: originalEvent.eventFee,
-        tags: originalEvent.tags,
-        image: originalEvent.image,
-        organizerId: req.admin.id,
-        status: "upcoming",
-        currentAttendees: 0,
-      });
-
-      logger.info(
-        `Event duplicated: ${duplicatedEvent.title} (${duplicatedEvent.id}) from ${originalEvent.title} by ${req.admin.name}`
-      );
-
-      // Emit real-time notification
-      const io = req.app.get("io");
-      if (io) {
-        io.to("admin-room").emit("event-duplicated", {
-          originalEvent: {
-            id: originalEvent.id,
-            title: originalEvent.title,
-          },
-          newEvent: {
-            id: duplicatedEvent.id,
-            title: duplicatedEvent.title,
-            date: duplicatedEvent.date,
-          },
-          duplicatedBy: req.admin.name,
-          timestamp: new Date(),
-        });
-      }
-
-      res.status(201).json({
-        success: true,
-        message: "Event duplicated successfully",
-        data: {
-          id: duplicatedEvent.id,
-          title: duplicatedEvent.title,
-          description: duplicatedEvent.description,
-          date: duplicatedEvent.date,
-          time: duplicatedEvent.time,
-          location: duplicatedEvent.location,
-          category: duplicatedEvent.category,
-          status: duplicatedEvent.status,
-        },
-      });
-    } catch (error) {
-      logger.error("Duplicate event error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to duplicate event",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   },
@@ -815,21 +567,275 @@ const eventsController = {
       res.status(500).json({
         success: false,
         message: "Failed to delete event",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   },
 
-  // @desc    Export events to CSV
-  // @route   GET /api/events/export
-  // @access  Private
+  // Additional methods remain the same...
+  getUpcomingEvents: async (req, res) => {
+    try {
+      const { Event } = req.db;
+      const { limit = 10 } = req.query;
+
+      const events = await Event.getUpcomingEvents(parseInt(limit));
+
+      const formattedEvents = events.map(event => ({
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        date: event.date,
+        time: event.time,
+        endTime: event.endTime,
+        location: event.location,
+        category: event.category,
+        maxAttendees: event.maxAttendees,
+        currentAttendees: event.currentAttendees,
+        status: event.status,
+        image: event.image,
+        organizer: event.organizer?.name || 'Unknown'
+      }));
+
+      res.json({
+        success: true,
+        message: "Upcoming events retrieved successfully",
+        data: formattedEvents,
+      });
+    } catch (error) {
+      logger.error("Get upcoming events error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve upcoming events",
+      });
+    }
+  },
+
+  getEventCategories: async (req, res) => {
+    try {
+      const categories = [
+        "Service",
+        "Conference",
+        "Seminar",
+        "Workshop",
+        "Outreach",
+        "Fellowship",
+        "Youth Event",
+        "Children Event",
+        "Prayer Meeting",
+        "Special Program",
+        "Other",
+      ];
+
+      res.json({
+        success: true,
+        message: "Event categories retrieved successfully",
+        data: categories,
+      });
+    } catch (error) {
+      logger.error("Get categories error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve categories",
+      });
+    }
+  },
+
+  getEventsStats: async (req, res) => {
+    try {
+      const { Event } = req.db;
+
+      const [
+        totalEvents,
+        upcomingEvents,
+        completedEvents,
+        thisMonthEvents,
+        categoryStats,
+        statusStats,
+      ] = await Event.getStatistics();
+
+      res.json({
+        success: true,
+        message: "Event statistics retrieved successfully",
+        data: {
+          totalEvents,
+          upcomingEvents,
+          completedEvents,
+          thisMonthEvents,
+          categoryStats,
+          statusStats,
+        },
+      });
+    } catch (error) {
+      logger.error("Get event statistics error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve event statistics",
+      });
+    }
+  },
+
+  updateEventAttendance: async (req, res) => {
+    try {
+      const { Event } = req.db;
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const event = await Event.findByPk(req.params.id);
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found",
+        });
+      }
+
+      const { attendanceCount } = req.body;
+
+      if (event.maxAttendees && attendanceCount > event.maxAttendees) {
+        return res.status(400).json({
+          success: false,
+          message: "Attendance count cannot exceed maximum attendees",
+        });
+      }
+
+      await event.update({ currentAttendees: attendanceCount });
+
+      logger.info(
+        `Event attendance updated: ${event.title} (${event.id}) - ${attendanceCount} attendees by ${req.admin.name}`
+      );
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to("admin-room").emit("event-attendance-updated", {
+          event: {
+            id: event.id,
+            title: event.title,
+            currentAttendees: attendanceCount,
+          },
+          updatedBy: req.admin.name,
+          timestamp: new Date(),
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Event attendance updated successfully",
+        data: {
+          id: event.id,
+          title: event.title,
+          currentAttendees: event.currentAttendees,
+          maxAttendees: event.maxAttendees,
+        },
+      });
+    } catch (error) {
+      logger.error("Update event attendance error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to update event attendance",
+      });
+    }
+  },
+
+  duplicateEvent: async (req, res) => {
+    try {
+      const { Event } = req.db;
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const originalEvent = await Event.findByPk(req.params.id);
+      if (!originalEvent) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found",
+        });
+      }
+
+      const newDate = new Date();
+      newDate.setDate(newDate.getDate() + 7);
+
+      const duplicatedEvent = await Event.create({
+        title: `${originalEvent.title} (Copy)`,
+        description: originalEvent.description,
+        date: newDate.toISOString().split("T")[0],
+        time: originalEvent.time,
+        endTime: originalEvent.endTime,
+        location: originalEvent.location,
+        category: originalEvent.category,
+        maxAttendees: originalEvent.maxAttendees,
+        isRecurring: originalEvent.isRecurring,
+        recurringPattern: originalEvent.recurringPattern,
+        registrationRequired: originalEvent.registrationRequired,
+        eventFee: originalEvent.eventFee,
+        tags: originalEvent.tags,
+        image: originalEvent.image,
+        organizerId: req.admin.id,
+        status: "upcoming",
+        currentAttendees: 0,
+      });
+
+      logger.info(
+        `Event duplicated: ${duplicatedEvent.title} (${duplicatedEvent.id}) from ${originalEvent.title} by ${req.admin.name}`
+      );
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to("admin-room").emit("event-duplicated", {
+          originalEvent: {
+            id: originalEvent.id,
+            title: originalEvent.title,
+          },
+          newEvent: {
+            id: duplicatedEvent.id,
+            title: duplicatedEvent.title,
+            date: duplicatedEvent.date,
+          },
+          duplicatedBy: req.admin.name,
+          timestamp: new Date(),
+        });
+      }
+
+      res.status(201).json({
+        success: true,
+        message: "Event duplicated successfully",
+        data: {
+          id: duplicatedEvent.id,
+          title: duplicatedEvent.title,
+          description: duplicatedEvent.description,
+          date: duplicatedEvent.date,
+          time: duplicatedEvent.time,
+          location: duplicatedEvent.location,
+          category: duplicatedEvent.category,
+          status: duplicatedEvent.status,
+        },
+      });
+    } catch (error) {
+      logger.error("Duplicate event error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to duplicate event",
+      });
+    }
+  },
+
   exportEvents: async (req, res) => {
     try {
-      // ✅ Get models from req.db
       const { Event, Admin } = req.db;
 
       const { format = "csv", status = "all", category = "all" } = req.query;
 
-      // Build where clause
       let whereClause = {};
       if (status !== "all") {
         whereClause.status = status;
@@ -851,7 +857,6 @@ const eventsController = {
       });
 
       if (format === "csv") {
-        // Generate CSV content
         const csvHeaders =
           "Title,Description,Date,Time,End Time,Location,Category,Status,Organizer,Max Attendees,Current Attendees,Registration Required,Event Fee\n";
         const csvContent = events
