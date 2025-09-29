@@ -1,9 +1,8 @@
-// controllers/authController.js - Enhanced with better logging and validation
+// controllers/authController.js - FIXED: No direct Admin import
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { validationResult } = require("express-validator");
-const { Admin } = require("../models");
 const logger = require("../utils/logger");
 const emailService = require("../services/emailService");
 
@@ -22,7 +21,7 @@ const generateTokens = (adminId) => {
 
 // Helper function to generate secure token
 const generateSecureToken = () => {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomBytes(32).toString("hex");
 };
 
 const authController = {
@@ -31,6 +30,9 @@ const authController = {
   // @access  Public
   login: async (req, res) => {
     try {
+      // ✅ Get Admin model from req.db
+      const { Admin } = req.db;
+
       // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -45,10 +47,10 @@ const authController = {
 
       // Find admin by email
       const admin = await Admin.findOne({
-        where: { 
+        where: {
           email: email.toLowerCase(),
-          isActive: true 
-        }
+          isActive: true,
+        },
       });
 
       if (!admin) {
@@ -91,10 +93,10 @@ const authController = {
         success: true,
         message: "Login successful",
         data: {
-          user: admin.toJSON(), // Using 'user' for consistency
-          admin: admin.toJSON(), // Also include 'admin' for backward compatibility
+          user: admin.toJSON(),
+          admin: admin.toJSON(),
           accessToken,
-          token: accessToken, // Also include 'token' for backward compatibility
+          token: accessToken,
           refreshToken,
         },
       });
@@ -112,13 +114,16 @@ const authController = {
   // @access  Public
   refresh: async (req, res) => {
     try {
-      const authHeader = req.headers['authorization'];
-      const refreshToken = authHeader && authHeader.split(' ')[1];
+      // ✅ Get Admin model from req.db
+      const { Admin } = req.db;
+
+      const authHeader = req.headers["authorization"];
+      const refreshToken = authHeader && authHeader.split(" ")[1];
 
       if (!refreshToken) {
         return res.status(401).json({
           success: false,
-          message: 'Refresh token is required'
+          message: "Refresh token is required",
         });
       }
 
@@ -129,22 +134,24 @@ const authController = {
       } catch (error) {
         return res.status(401).json({
           success: false,
-          message: 'Invalid refresh token'
+          message: "Invalid refresh token",
         });
       }
 
       // Get admin from database and check if refresh token matches
       const admin = await Admin.findByPk(decoded.adminId);
-      
+
       if (!admin || !admin.isActive || admin.refreshToken !== refreshToken) {
         return res.status(401).json({
           success: false,
-          message: 'Invalid refresh token'
+          message: "Invalid refresh token",
         });
       }
 
       // Generate new tokens
-      const { accessToken, refreshToken: newRefreshToken } = generateTokens(admin.id);
+      const { accessToken, refreshToken: newRefreshToken } = generateTokens(
+        admin.id
+      );
 
       // Update admin with new refresh token
       await admin.update({ refreshToken: newRefreshToken });
@@ -229,27 +236,30 @@ const authController = {
   // @access  Private
   requestProfileUpdate: async (req, res) => {
     try {
-      const { type } = req.body; // 'email' or 'profile'
+      const { type } = req.body;
 
       // Generate secure token
       const token = generateSecureToken();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
       // Store token in database
       await req.admin.update({
         profileUpdateToken: token,
         profileUpdateTokenExpires: expiresAt,
-        profileUpdateType: type
+        profileUpdateType: type,
       });
 
       // Send email with token
       await emailService.sendProfileUpdateEmail(req.admin, token, type);
 
-      logger.info(`Profile update token requested: ${req.admin.email} (${type})`);
+      logger.info(
+        `Profile update token requested: ${req.admin.email} (${type})`
+      );
 
       res.json({
         success: true,
-        message: "Verification token sent to your email. Please check your inbox.",
+        message:
+          "Verification token sent to your email. Please check your inbox.",
       });
     } catch (error) {
       logger.error("Request profile update error:", error);
@@ -265,8 +275,10 @@ const authController = {
   // @access  Private
   updateProfile: async (req, res) => {
     try {
-      // ENHANCED: Add comprehensive request logging
-      logger.info('Profile update request received:', {
+      // ✅ Get Admin model from req.db
+      const { Admin } = req.db;
+
+      logger.info("Profile update request received:", {
         adminId: req.admin.id,
         adminEmail: req.admin.email,
         requestBody: {
@@ -275,22 +287,14 @@ const authController = {
           phone: req.body.phone,
           position: req.body.position,
           hasToken: !!req.body.token,
-          tokenLength: req.body.token?.length
         },
-        headers: {
-          contentType: req.headers['content-type'],
-          authorization: req.headers.authorization ? 'Bearer [REDACTED]' : 'none'
-        }
       });
 
-      // Check validation errors FIRST
+      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        logger.error('Profile update validation errors:', {
-          errors: errors.array(),
-          requestBody: req.body
-        });
-        
+        logger.error("Profile update validation errors:", errors.array());
+
         return res.status(400).json({
           success: false,
           message: "Validation failed",
@@ -300,35 +304,22 @@ const authController = {
 
       const { name, email, phone, position, token } = req.body;
 
-      // FIXED: Reload admin data to get the latest token information
+      // Reload admin data
       await req.admin.reload();
-
-      logger.info('Profile update debug info (after reload):', {
-        adminId: req.admin.id,
-        currentEmail: req.admin.email,
-        requestedEmail: email,
-        hasToken: !!token,
-        storedToken: req.admin.profileUpdateToken ? 'exists' : 'none',
-        tokenType: req.admin.profileUpdateType,
-        tokenExpiry: req.admin.profileUpdateTokenExpires,
-        isExpired: req.admin.profileUpdateTokenExpires ? req.admin.profileUpdateTokenExpires < new Date() : 'no expiry'
-      });
 
       // If email is being changed, require token verification
       if (email && email.toLowerCase() !== req.admin.email.toLowerCase()) {
-        logger.info('Email change detected, validating token...');
-        
+        logger.info("Email change detected, validating token...");
+
         if (!token) {
-          logger.error('No token provided for email change');
           return res.status(400).json({
             success: false,
-            message: "Email verification token is required to change email address",
+            message:
+              "Email verification token is required to change email address",
           });
         }
 
-        // FIXED: Better token validation logic
         if (!req.admin.profileUpdateToken) {
-          logger.error('No stored token found for admin');
           return res.status(400).json({
             success: false,
             message: "No verification token found. Please request a new token.",
@@ -336,52 +327,40 @@ const authController = {
         }
 
         if (req.admin.profileUpdateToken !== token) {
-          logger.error('Token mismatch:', {
-            provided: token.substring(0, 10) + '...',
-            stored: req.admin.profileUpdateToken.substring(0, 10) + '...'
-          });
           return res.status(400).json({
             success: false,
             message: "Invalid verification token",
           });
         }
 
-        if (!req.admin.profileUpdateTokenExpires || req.admin.profileUpdateTokenExpires < new Date()) {
-          logger.error('Token expired:', {
-            expiry: req.admin.profileUpdateTokenExpires,
-            now: new Date()
-          });
+        if (
+          !req.admin.profileUpdateTokenExpires ||
+          req.admin.profileUpdateTokenExpires < new Date()
+        ) {
           return res.status(400).json({
             success: false,
-            message: "Verification token has expired. Please request a new token.",
+            message:
+              "Verification token has expired. Please request a new token.",
           });
         }
 
-        // FIXED: Check token type
-        if (req.admin.profileUpdateType !== 'email') {
-          logger.error('Wrong token type:', {
-            expected: 'email',
-            actual: req.admin.profileUpdateType
-          });
+        if (req.admin.profileUpdateType !== "email") {
           return res.status(400).json({
             success: false,
             message: "Token is not valid for email updates",
           });
         }
 
-        // Check if email is already taken by another admin
+        // Check if email is already taken
+        const { Sequelize } = req.db;
         const existingAdmin = await Admin.findOne({
-          where: { 
+          where: {
             email: email.toLowerCase(),
-            id: { [require('sequelize').Op.ne]: req.admin.id }
-          }
+            id: { [Sequelize.Op.ne]: req.admin.id },
+          },
         });
 
         if (existingAdmin) {
-          logger.error('Email already exists:', {
-            requestedEmail: email.toLowerCase(),
-            existingAdminId: existingAdmin.id
-          });
           return res.status(400).json({
             success: false,
             message: "Email is already in use by another admin",
@@ -389,34 +368,26 @@ const authController = {
         }
       }
 
-      // FIXED: Build update data properly
+      // Build update data
       const updateData = {};
-
-      // Always update these fields if provided
       if (name !== undefined) updateData.name = name;
-      if (phone !== undefined) updateData.phone = phone;  
+      if (phone !== undefined) updateData.phone = phone;
       if (position !== undefined) updateData.position = position;
 
       // Only update email if token was verified
       if (email && token && req.admin.profileUpdateToken === token) {
         updateData.email = email.toLowerCase();
-        // Clear the verification tokens after successful use
         updateData.profileUpdateToken = null;
         updateData.profileUpdateTokenExpires = null;
         updateData.profileUpdateType = null;
       }
 
-      logger.info('Updating admin with data:', updateData);
-
-      // FIXED: Update the admin record
       const updatedAdmin = await req.admin.update(updateData);
-
-      // FIXED: Reload to get the updated data
       await updatedAdmin.reload();
 
-      logger.info(`Admin profile updated successfully: ${updatedAdmin.email} (${updatedAdmin.id})`);
+      logger.info(`Admin profile updated successfully: ${updatedAdmin.email}`);
 
-      // Emit real-time notification if socket available
+      // Emit real-time notification
       if (req.app.get("io")) {
         req.app.get("io").to("admin-room").emit("admin-profile-updated", {
           adminId: updatedAdmin.id,
@@ -438,7 +409,8 @@ const authController = {
       res.status(500).json({
         success: false,
         message: "Profile update failed",
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   },
@@ -458,7 +430,9 @@ const authController = {
       }
 
       // Verify current password
-      const isCurrentPasswordValid = await req.admin.comparePassword(currentPassword);
+      const isCurrentPasswordValid = await req.admin.comparePassword(
+        currentPassword
+      );
       if (!isCurrentPasswordValid) {
         return res.status(400).json({
           success: false,
@@ -468,12 +442,12 @@ const authController = {
 
       // Generate secure token
       const token = generateSecureToken();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
       // Store token in database
       await req.admin.update({
         passwordChangeToken: token,
-        passwordChangeTokenExpires: expiresAt
+        passwordChangeTokenExpires: expiresAt,
       });
 
       // Send email with token
@@ -499,7 +473,6 @@ const authController = {
   // @access  Private
   changePassword: async (req, res) => {
     try {
-      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -511,13 +484,16 @@ const authController = {
 
       const { token, newPassword } = req.body;
 
-      // FIXED: Reload admin data
+      // Reload admin data
       await req.admin.reload();
 
       // Verify token
-      if (!token || req.admin.passwordChangeToken !== token || 
-          !req.admin.passwordChangeTokenExpires || 
-          req.admin.passwordChangeTokenExpires < new Date()) {
+      if (
+        !token ||
+        req.admin.passwordChangeToken !== token ||
+        !req.admin.passwordChangeTokenExpires ||
+        req.admin.passwordChangeTokenExpires < new Date()
+      ) {
         return res.status(400).json({
           success: false,
           message: "Invalid or expired verification token",
@@ -534,14 +510,14 @@ const authController = {
       }
 
       // Update password and clear tokens
-      await req.admin.update({ 
+      await req.admin.update({
         password: newPassword,
-        refreshToken: null, // Clear all sessions
+        refreshToken: null,
         passwordChangeToken: null,
-        passwordChangeTokenExpires: null
+        passwordChangeTokenExpires: null,
       });
 
-      logger.info(`Password changed: ${req.admin.email} (${req.admin.id})`);
+      logger.info(`Password changed: ${req.admin.email}`);
 
       res.json({
         success: true,
@@ -583,7 +559,9 @@ const authController = {
   // @access  Public
   forgotPassword: async (req, res) => {
     try {
-      // Check validation errors
+      // ✅ Get Admin model from req.db
+      const { Admin } = req.db;
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -597,41 +575,43 @@ const authController = {
 
       // Find admin by email
       const admin = await Admin.findOne({
-        where: { 
+        where: {
           email: email.toLowerCase(),
-          isActive: true 
-        }
+          isActive: true,
+        },
       });
 
       // Always return success to prevent email enumeration
       if (!admin) {
         return res.json({
           success: true,
-          message: "If an account with that email exists, a password reset link has been sent.",
+          message:
+            "If an account with that email exists, a password reset link has been sent.",
         });
       }
 
       // Generate password reset token
       const resetToken = jwt.sign(
         { adminId: admin.id },
-        process.env.JWT_SECRET + admin.password, // Include password hash to invalidate token on password change
+        process.env.JWT_SECRET + admin.password,
         { expiresIn: "1h" }
       );
 
       // Save reset token and expiry
       await admin.update({
         passwordResetToken: resetToken,
-        passwordResetExpires: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+        passwordResetExpires: new Date(Date.now() + 60 * 60 * 1000),
       });
 
       // Send email with reset link
       await emailService.sendPasswordResetEmail(admin, resetToken);
 
-      logger.info(`Password reset requested: ${admin.email} (${admin.id})`);
+      logger.info(`Password reset requested: ${admin.email}`);
 
       res.json({
         success: true,
-        message: "If an account with that email exists, a password reset link has been sent.",
+        message:
+          "If an account with that email exists, a password reset link has been sent.",
       });
     } catch (error) {
       logger.error("Forgot password error:", error);
@@ -656,13 +636,12 @@ const authController = {
         });
       }
 
-      // FIXED: Reload admin data
       await req.admin.reload();
 
-      // Check if token is valid and not expired
-      const isValid = req.admin.profileUpdateToken === token && 
-                     req.admin.profileUpdateTokenExpires && 
-                     req.admin.profileUpdateTokenExpires > new Date();
+      const isValid =
+        req.admin.profileUpdateToken === token &&
+        req.admin.profileUpdateTokenExpires &&
+        req.admin.profileUpdateTokenExpires > new Date();
 
       if (!isValid) {
         return res.status(400).json({
@@ -675,8 +654,8 @@ const authController = {
         success: true,
         message: "Token verified successfully",
         data: {
-          type: req.admin.profileUpdateType
-        }
+          type: req.admin.profileUpdateType,
+        },
       });
     } catch (error) {
       logger.error("Verify profile token error:", error);
@@ -701,13 +680,12 @@ const authController = {
         });
       }
 
-      // FIXED: Reload admin data
       await req.admin.reload();
 
-      // Check if token is valid and not expired
-      const isValid = req.admin.passwordChangeToken === token && 
-                     req.admin.passwordChangeTokenExpires && 
-                     req.admin.passwordChangeTokenExpires > new Date();
+      const isValid =
+        req.admin.passwordChangeToken === token &&
+        req.admin.passwordChangeTokenExpires &&
+        req.admin.passwordChangeTokenExpires > new Date();
 
       if (!isValid) {
         return res.status(400).json({
@@ -718,7 +696,7 @@ const authController = {
 
       res.json({
         success: true,
-        message: "Token verified successfully"
+        message: "Token verified successfully",
       });
     } catch (error) {
       logger.error("Verify password token error:", error);
