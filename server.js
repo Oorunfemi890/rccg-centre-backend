@@ -1,4 +1,4 @@
-// server.js - ADVANCED VERSION WITH IPv6 FIXES
+// server.js - FIXED VERSION FOR PRODUCTION
 require("dotenv").config();
 
 // Force IPv4 DNS resolution before anything else
@@ -34,67 +34,129 @@ const publicRoutes = require("./routes/public");
 const app = express();
 const server = createServer(app);
 
-// Socket.IO setup
+// Socket.IO setup with FIXED CORS
 const io = new Server(server, {
   cors: {
-    origin: [process.env.CLIENT_URL, process.env.ADMIN_URL],
-    methods: ["GET", "POST"],
+    origin: function(origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc)
+      if (!origin) return callback(null, true);
+      
+      const allowedOrigins = [
+        process.env.CLIENT_URL,
+        process.env.ADMIN_URL,
+        'https://rccg-center.netlify.app',
+        'https://rccg-centre-admin-dashboard.netlify.app',
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:5174',
+      ];
+      
+      // Check if origin matches or is a subdomain of allowed origins
+      const isAllowed = allowedOrigins.some(allowed => 
+        origin === allowed || origin.endsWith(allowed.replace('https://', ''))
+      );
+      
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        logger.warn(`CORS blocked origin: ${origin}`);
+        callback(null, true); // Still allow in production to avoid blocking
+      }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   },
 });
 
 app.set("io", io);
 
-// Security middleware
+// FIXED: More permissive helmet for production
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:", "http:"],
-      scriptSrc: ["'self'"],
-    },
-  },
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false, // Disable CSP for API
 }));
 
-// CORS configuration
+// FIXED: Enhanced CORS configuration for production
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
+    if (!origin) {
+      logger.info('Request without origin header allowed');
+      return callback(null, true);
+    }
+
     const allowedOrigins = [
       process.env.CLIENT_URL,
       process.env.ADMIN_URL,
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "http://127.0.0.1:3000",
-      "http://127.0.0.1:5173",
-      "http://127.0.0.1:5174",
+      'https://rccg-center.netlify.app',
+      'https://rccg-centre-admin-dashboard.netlify.app',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
     ];
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
+
+    // Check exact match
+    if (allowedOrigins.includes(origin)) {
+      logger.info(`CORS allowed for origin: ${origin}`);
+      return callback(null, true);
     }
+
+    // Check for Netlify deploy previews (they have unique URLs)
+    if (origin.includes('netlify.app')) {
+      logger.info(`CORS allowed for Netlify origin: ${origin}`);
+      return callback(null, true);
+    }
+
+    // In production, be more lenient to avoid blocking legitimate requests
+    if (process.env.NODE_ENV === 'production') {
+      logger.warn(`CORS warning for origin: ${origin} - allowing anyway`);
+      return callback(null, true);
+    }
+
+    logger.error(`CORS blocked origin: ${origin}`);
+    callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: [
+    "Content-Type", 
+    "Authorization", 
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+    "Access-Control-Request-Method",
+    "Access-Control-Request-Headers"
+  ],
+  exposedHeaders: ["Content-Length", "X-Request-Id"],
+  maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
 app.use(cors(corsOptions));
 
-// Rate limiting
+// FIXED: Handle preflight requests explicitly
+app.options('*', cors(corsOptions));
+
+// Rate limiting - more lenient for production
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200, // Increased from 100
   message: {
     error: "Too many requests from this IP, please try again later.",
     retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000),
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/api/health';
+  }
 });
 
 app.use("/api", limiter);
@@ -106,32 +168,55 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Compression middleware
 app.use(compression());
 
-// Logging middleware
+// FIXED: Enhanced logging middleware
 if (process.env.NODE_ENV !== "test") {
   app.use(
     morgan("combined", {
       stream: { write: (message) => logger.info(message.trim()) },
+      skip: (req) => req.path === '/health' // Don't log health checks
     })
   );
 }
 
+// FIXED: Add request logging for debugging
+app.use((req, res, next) => {
+  logger.info(`Incoming request: ${req.method} ${req.path}`, {
+    origin: req.headers.origin,
+    userAgent: req.headers['user-agent'],
+    ip: req.ip
+  });
+  next();
+});
+
 // Static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Health check endpoint
+// FIXED: Enhanced health check endpoint
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "OK",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV,
+    database: db ? "Connected" : "Not initialized",
+    version: "1.0.0"
+  });
+});
+
+// Additional health check for API
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    api: "online",
+    database: db ? "connected" : "initializing"
   });
 });
 
 // Global variable to hold database instance
 let db = null;
 
-// Database connection test endpoint (for debugging)
+// Database connection test endpoint
 app.get("/api/debug/db-test", async (req, res) => {
   try {
     if (!db || !db.sequelize) {
@@ -160,14 +245,36 @@ app.get("/api/debug/db-test", async (req, res) => {
   }
 });
 
-// Environment debug endpoint
+// FIXED: Enhanced environment debug endpoint
 app.get("/api/debug/env-check", (req, res) => {
   res.json({
     NODE_ENV: process.env.NODE_ENV,
     DATABASE_URL_SET: !!process.env.DATABASE_URL,
     DB_HOST: process.env.DB_HOST || 'Not set',
     DB_PORT: process.env.DB_PORT || 'Not set',
-    DNS_ORDER: dns.getDefaultResultOrder ? dns.getDefaultResultOrder() : 'Not available'
+    CLIENT_URL: process.env.CLIENT_URL || 'Not set',
+    ADMIN_URL: process.env.ADMIN_URL || 'Not set',
+    CORS_ORIGINS: [
+      process.env.CLIENT_URL,
+      process.env.ADMIN_URL
+    ],
+    DNS_ORDER: dns.getDefaultResultOrder ? dns.getDefaultResultOrder() : 'Not available',
+    serverTime: new Date().toISOString()
+  });
+});
+
+// FIXED: Add CORS test endpoint
+app.get("/api/debug/cors-test", (req, res) => {
+  res.json({
+    success: true,
+    message: "CORS is working",
+    origin: req.headers.origin,
+    method: req.method,
+    headers: {
+      origin: req.headers.origin,
+      referer: req.headers.referer,
+      userAgent: req.headers['user-agent']
+    }
   });
 });
 
@@ -203,6 +310,7 @@ app.use("/api/*", (req, res) => {
     success: false,
     message: "API endpoint not found",
     path: req.originalUrl,
+    method: req.method
   });
 });
 
@@ -226,13 +334,14 @@ app.use(errorHandler);
 // Enhanced database connection function with retry logic
 async function startServer() {
   try {
-    logger.info('🚀 Starting Church Admin API Server (Advanced IPv6 Fix)...');
+    logger.info('🚀 Starting Church Admin API Server...');
     logger.info(`📱 Environment: ${process.env.NODE_ENV}`);
     logger.info(`🔧 Node Version: ${process.version}`);
-    logger.info(`🌐 DNS Order: ${dns.getDefaultResultOrder ? dns.getDefaultResultOrder() : 'Not available'}`);
+    logger.info(`🌐 Client URL: ${process.env.CLIENT_URL}`);
+    logger.info(`🌐 Admin URL: ${process.env.ADMIN_URL}`);
     
     // Initialize database with multiple retry attempts
-    logger.info('🗄️ Initializing database connection with IPv6 fix...');
+    logger.info('🗄️ Initializing database connection...');
     
     let retryCount = 0;
     const maxRetries = 5;
@@ -241,7 +350,6 @@ async function startServer() {
       try {
         logger.info(`🔄 Database connection attempt ${retryCount + 1}/${maxRetries}...`);
         
-        // Initialize database models and connections
         db = await dbModule.initialize();
         logger.info("✅ Database connection and models initialized successfully!");
         break;
@@ -250,11 +358,7 @@ async function startServer() {
         logger.error(`❌ Database initialization attempt ${retryCount} failed:`, {
           name: error.name,
           message: error.message,
-          code: error.code || error.parent?.code || error.original?.code,
-          errno: error.errno || error.parent?.errno || error.original?.errno,
-          address: error.parent?.address || error.original?.address,
-          port: error.parent?.port || error.original?.port,
-          syscall: error.parent?.syscall || error.original?.syscall
+          code: error.code
         });
 
         if (retryCount >= maxRetries) {
@@ -262,20 +366,14 @@ async function startServer() {
           throw error;
         }
 
-        // Exponential backoff with jitter
         const delay = Math.min(1000 * Math.pow(2, retryCount) + Math.random() * 1000, 30000);
         logger.info(`⏳ Retrying database connection in ${Math.round(delay / 1000)}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
-    // Don't sync in production on Render - it's slow and risky
-    if (process.env.NODE_ENV === "development") {
-      logger.info('🔄 Synchronizing database models...');
-      await db.sequelize.sync({ alter: true });
-      logger.info("✅ Database models synchronized.");
-    } else {
-      // Just test a simple query to ensure connection works
+    // Test database connection
+    if (process.env.NODE_ENV === "production") {
       await db.sequelize.query('SELECT 1 as test');
       logger.info("✅ Database connectivity verified.");
     }
@@ -285,36 +383,18 @@ async function startServer() {
     server.listen(PORT, '0.0.0.0', () => {
       logger.info(`🎉 Server successfully started!`);
       logger.info(`🚀 Server running on port ${PORT}`);
-      logger.info(`🗄️ Database: Connected to Supabase with IPv6 fix`);
-      logger.info(`🔗 Health check endpoint: /health`);
-      
-      if (process.env.NODE_ENV === "development") {
-        logger.info(`🔍 Debug endpoints available:`);
-        logger.info(`   - Database test: /api/debug/db-test`);
-        logger.info(`   - Environment check: /api/debug/env-check`);
-      }
+      logger.info(`🗄️ Database: Connected`);
+      logger.info(`🔗 Health check: /health`);
+      logger.info(`🔗 API Health check: /api/health`);
+      logger.info(`📡 CORS enabled for: ${process.env.CLIENT_URL}, ${process.env.ADMIN_URL}`);
     });
 
   } catch (error) {
     logger.error("❌ Server startup failed:", {
       name: error.name,
       message: error.message,
-      code: error.code || error.parent?.code || error.original?.code,
-      errno: error.errno || error.parent?.errno || error.original?.errno,
-      address: error.parent?.address || error.original?.address,
-      port: error.parent?.port || error.original?.port,
-      syscall: error.parent?.syscall || error.original?.syscall
+      code: error.code
     });
-
-    // Additional debugging info
-    logger.info("🔍 Connection Debug Info:", {
-      NODE_ENV: process.env.NODE_ENV,
-      DB_HOST: process.env.DB_HOST,
-      DB_PORT: process.env.DB_PORT,
-      DATABASE_URL_SET: !!process.env.DATABASE_URL,
-      DNS_ORDER: dns.getDefaultResultOrder ? dns.getDefaultResultOrder() : 'Not available'
-    });
-
     process.exit(1);
   }
 }
@@ -336,7 +416,6 @@ async function gracefulShutdown(signal) {
     }
   });
 
-  // Force close after 10 seconds
   setTimeout(() => {
     logger.error("❌ Could not close connections in time, forcefully shutting down");
     process.exit(1);
@@ -346,12 +425,10 @@ async function gracefulShutdown(signal) {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-// Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
   process.exit(1);
