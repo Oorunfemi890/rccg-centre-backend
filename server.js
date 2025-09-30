@@ -1,4 +1,4 @@
-// server.js - FIXED VERSION FOR PRODUCTION
+// server.js - FIXED VERSION FOR PRODUCTION WITH DATABASE MIDDLEWARE
 require("dotenv").config();
 
 // Force IPv4 DNS resolution before anything else
@@ -146,7 +146,7 @@ app.options('*', cors(corsOptions));
 // Rate limiting - more lenient for production
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200, // Increased from 100
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200,
   message: {
     error: "Too many requests from this IP, please try again later.",
     retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000),
@@ -173,7 +173,7 @@ if (process.env.NODE_ENV !== "test") {
   app.use(
     morgan("combined", {
       stream: { write: (message) => logger.info(message.trim()) },
-      skip: (req) => req.path === '/health' // Don't log health checks
+      skip: (req) => req.path === '/health'
     })
   );
 }
@@ -278,23 +278,52 @@ app.get("/api/debug/cors-test", (req, res) => {
   });
 });
 
-// Middleware to ensure database is initialized
+// ✨ CRITICAL FIX: Enhanced database middleware that injects models
 const ensureDatabase = async (req, res, next) => {
   try {
     if (!db) {
+      logger.error('Database not initialized');
       return res.status(503).json({
         success: false,
-        message: 'Database not yet initialized, please try again in a moment'
+        message: 'Database not yet initialized, please try again in a moment',
+        code: 'DB_NOT_INITIALIZED'
       });
     }
-    req.db = db;
+
+    if (!db.sequelize) {
+      logger.error('Database sequelize instance missing');
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection unavailable',
+        code: 'DB_UNAVAILABLE'
+      });
+    }
+
+    // ✨ INJECT ALL MODELS INTO REQUEST
+    req.db = {
+      sequelize: db.sequelize,
+      Sequelize: db.Sequelize,
+      Admin: db.Admin,
+      Member: db.Member,
+      Attendance: db.Attendance,
+      Event: db.Event,
+      Celebration: db.Celebration,
+      MemberAttendance: db.MemberAttendance
+    };
+
     next();
   } catch (error) {
-    next(error);
+    logger.error('Database middleware error:', error);
+    return res.status(503).json({
+      success: false,
+      message: 'Database connection error',
+      code: 'DB_ERROR',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
-// API Routes
+// ✨ API Routes with database middleware FIRST, then auth
 app.use("/api/auth", ensureDatabase, authRoutes);
 app.use("/api/admin", ensureDatabase, authenticateToken, adminRoutes);
 app.use("/api/members", ensureDatabase, authenticateToken, membersRoutes);
@@ -351,7 +380,17 @@ async function startServer() {
         logger.info(`🔄 Database connection attempt ${retryCount + 1}/${maxRetries}...`);
         
         db = await dbModule.initialize();
+        
+        // ✨ VERIFY ALL MODELS ARE INITIALIZED
+        const requiredModels = ['Admin', 'Member', 'Attendance', 'Event', 'Celebration', 'MemberAttendance'];
+        const missingModels = requiredModels.filter(model => !db[model]);
+        
+        if (missingModels.length > 0) {
+          throw new Error(`Missing models: ${missingModels.join(', ')}`);
+        }
+        
         logger.info("✅ Database connection and models initialized successfully!");
+        logger.info(`✅ Models available: ${Object.keys(db).filter(k => k !== 'sequelize' && k !== 'Sequelize' && k !== 'initialize').join(', ')}`);
         break;
       } catch (error) {
         retryCount++;
@@ -393,7 +432,8 @@ async function startServer() {
     logger.error("❌ Server startup failed:", {
       name: error.name,
       message: error.message,
-      code: error.code
+      code: error.code,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
     process.exit(1);
   }
