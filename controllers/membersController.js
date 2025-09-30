@@ -1,12 +1,14 @@
-// controllers/membersController.js
+// controllers/membersController.js - FIXED: No direct model imports
 const { Op } = require("sequelize");
-const { Member } = require("../models");
 const logger = require("../utils/logger");
 
 class MembersController {
   // Get all members with filtering and pagination
   async getAllMembers(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const {
         page = 1,
         limit = 10,
@@ -81,6 +83,9 @@ class MembersController {
   // Get member statistics
   async getMemberStats(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const [
         totalMembers,
         activeMembers,
@@ -127,6 +132,9 @@ class MembersController {
   // Get list of departments
   async getDepartments(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const departments = await Member.findAll({
         attributes: ["department"],
         where: {
@@ -157,6 +165,9 @@ class MembersController {
   // Search members
   async searchMembers(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const { q: searchTerm } = req.query;
       const members = await Member.searchMembers(searchTerm);
 
@@ -177,6 +188,9 @@ class MembersController {
   // Get member by ID
   async getMemberById(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const member = await Member.findByPk(req.params.id, {
         include: [
           {
@@ -210,6 +224,9 @@ class MembersController {
   // Create new member
   async createMember(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const {
         name,
         email,
@@ -292,6 +309,9 @@ class MembersController {
   // Update member
   async updateMember(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const member = await Member.findByPk(req.params.id);
       if (!member) {
         return res.status(404).json({
@@ -383,6 +403,9 @@ class MembersController {
   // Update member status
   async updateMemberStatus(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const member = await Member.findByPk(req.params.id);
       if (!member) {
         return res.status(404).json({
@@ -429,6 +452,9 @@ class MembersController {
   // Soft delete member
   async deleteMember(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const member = await Member.findByPk(req.params.id);
       if (!member) {
         return res.status(404).json({
@@ -471,6 +497,9 @@ class MembersController {
   // Export members
   async exportMembers(req, res) {
     try {
+      // ✅ Get models from req.db
+      const { Member } = req.db;
+
       const { format = "csv", status = "all", department = "all" } = req.query;
 
       // Build where clause
